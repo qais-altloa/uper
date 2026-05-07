@@ -1,6 +1,8 @@
 # models.py
 # Data classes for Driver and RideRequest
-
+# ─────────────────────────────────────────────
+# class Cell
+# ─────────────────────────────────────────────
 class Cell:
     def __init__(self, row, col):
       self.row=row
@@ -10,7 +12,9 @@ class Cell:
       
     def __repr__(self):
         return f"Cell({self.row}, {self.col})"
-
+# ─────────────────────────────────────────────
+# class Driver:
+# ─────────────────────────────────────────────
 class Driver:
    def __init__(self, id, name, phone, car, row, col):
         self.id = id       
@@ -20,7 +24,10 @@ class Driver:
         self.position = Cell(row, col)
         self.available = True 
   def __repr__(self):
-        return f"Driver({self.id}, {self.name},{self.phone},{self.car},{self.position},{self.available})" 
+        return f"Driver({self.id}, {self.name},{self.phone},{self.car},{self.position},{self.available})"
+# ─────────────────────────────────────────────
+# RideRequest:
+# ─────────────────────────────────────────────      
 class RideRequest:
    def __init__(self, pickup_row, pickup_col, dest_row, dest_col):
     self.pickup = Cell(pickup_row, pickup_col)
