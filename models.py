@@ -36,6 +36,28 @@ class RideRequest:
     self.destination = Cell(dest_row, dest_col)
   def __repr__(self):
         return f"RideRequest({self.pickup},{self.destination})"
+      
+# ─────────────────────────────────────────────
+# Passenger Class
+# ─────────────────────────────────────────────
+class Passenger:
+    def __init__(self, pickup_row, pickup_col, dest_row, dest_col):
+        self.pickup = Cell(pickup_row, pickup_col)
+        self.destination = Cell(dest_row, dest_col)
+    def __repr__(self):
+        return f"Passenger({self.pickup}, {self.destination})"
+
+
+# ─────────────────────────────────────────────
+# RideRequest Class
+# ─────────────────────────────────────────────
+
+class RideRequest:
+    def __init__(self, id, passenger):
+        self.id = id
+        self.passenger = passenger
+    def __repr__(self):
+        return f"RideRequest(id={self.id}, passenger={self.passenger})"
    
 
 
