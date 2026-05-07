@@ -58,6 +58,38 @@ def compute_trip(driver_to_pickup_dist, pickup_to_dest_dist):
         "travel_time": total_steps * TIME_PER_STEP,
     }
 
+# ─────────────────────────────────────────────
+# Grid class
+# ─────────────────────────────────────────────
+class Grid:
+  def __init__(self, row, col):
+    self.row=row
+    self.col = col
+    self.grid = [[0 for j in range(col)] for i in range(row)]
+  
+  def placeRideRequest(self, RideRequest):
+    self.grid[RideRequest.pickup.row][RideRequest.pickup.col] = 'P'
+
+  def placeDestination(self, RideRequest):
+    self.grid[RideRequest.destination.row][RideRequest.destination.col] = 'R'
+  
+  def placeDriver(self, driver):
+    self.grid[driver.position.row][driver.position.col] = driver.id
+  
+  def placeObstacle(self, row ,col):
+    self.grid[row][col]='X'
+  
+  def isValid(self, row, col):
+        if 0 <= row < self.row and 0 <= col < self.col and self.grid[row][col] != 'X':
+            return True
+        return False
+  
+  def display(self):
+    for i in range(self.row):
+        for j in range(self.col):
+            print(self.grid[i][j], end=" ")
+        print()
+    
 
 
   
