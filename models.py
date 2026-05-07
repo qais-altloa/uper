@@ -24,7 +24,9 @@ class Driver:
         self.position = Cell(row, col)
         self.available = True 
   def __repr__(self):
-        return f"Driver({self.id}, {self.name},{self.phone},{self.car},{self.position},{self.available})"
+        return (f"Driver(id={self.driver_id}, name={self.name}, "
+            f"phone={self.phone}, car={self.car}, "
+            f"position={self.position}, available={self.available})")
 # ─────────────────────────────────────────────
 # RideRequest:
 # ─────────────────────────────────────────────      
