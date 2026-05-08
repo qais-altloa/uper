@@ -69,7 +69,9 @@ class Grid:
     self.grid[row][col]='X'
   
   def isValid(self, row, col):
-        if 0 <= row < self.row and 0 <= col < self.col and self.grid[row][col] != 'X':
+      # Check if position is inside grid bounds
+        # and not an obstacle
+      if 0 <= row < self.row and 0 <= col < self.col and self.grid[row][col] != 'X':
             return True
         return False
   
