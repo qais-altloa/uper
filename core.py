@@ -45,18 +45,7 @@ COST_PER_STEP = 5
 TIME_PER_STEP = 2
 
 def compute_trip(driver_to_pickup_dist, pickup_to_dest_dist):
-    if driver_to_pickup_dist == math.inf or pickup_to_dest_dist == math.inf:
-        raise ValueError(
-            f"No valid path found — cannot compute trip cost. "
-            f"(driver→pickup: {driver_to_pickup_dist}, "
-            f"pickup→dest: {pickup_to_dest_dist})"
-        )
-    total_steps = driver_to_pickup_dist + pickup_to_dest_dist
-    return {
-        "total_steps": total_steps,
-        "trip_cost": total_steps * COST_PER_STEP,
-        "travel_time": total_steps * TIME_PER_STEP,
-    }
+
 
 # ─────────────────────────────────────────────
 # Grid class
