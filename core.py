@@ -56,11 +56,11 @@ class Grid:
     self.col = col
     self.grid = [[0 for j in range(col)] for i in range(row)]
   
-  def placeRideRequest(self, RideRequest):
-    self.grid[RideRequest.pickup.row][RideRequest.pickup.col] = 'P'
+  def placeRideRequest(self, Passenger):
+    self.grid[Passenger.pickup.row][Passenger.pickup.col] = 'P'
 
-  def placeDestination(self, RideRequest):
-    self.grid[RideRequest.destination.row][RideRequest.destination.col] = 'R'
+  def placeDestination(self, Passenger):
+    self.grid[Passenger.destination.row][Passenger.destination.col] = 'R'
   
   def placeDriver(self, driver):
     self.grid[driver.position.row][driver.position.col] = driver.id
