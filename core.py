@@ -80,7 +80,44 @@ class Grid:
         print()
     
 
+def trip_result(request, assigned_driver, bfs_path1, bfs_path2, cost, travel_time):
+    return {
+        "request":                request,
+        "assigned_driver":        assigned_driver,
+        "driver_to_pickup_steps": len(bfs_path1) - 1,
+        "pickup_to_dest_steps":   len(bfs_path2) - 1,
+        "total_steps":            len(bfs_path1) + len(bfs_path2) - 2,
+        "cost":                   cost,
+        "travel_time":            travel_time,
+        "full_path":              bfs_path1 + bfs_path2[1:]
+    }
 
+
+def trip_calculator(driver, request, bfs_path1, bfs_path2,
+                    cost_per_step=5, time_per_step=2):
+    total = len(bfs_path1) + len(bfs_path2) - 2
+    cost  = total * cost_per_step
+    time  = total * time_per_step
+    result = trip_result(request, driver, bfs_path1, bfs_path2, cost, time)
+
+    print("=" * 45)
+    print(f"  TRIP SUMMARY — {request.id}")
+    print("=" * 45)
+    print(f"  Driver       : {assigned_driver.name} ({assigned_driver.id})")
+    print(f"  Phone        : {assigned_driver.phone}")
+    print(f"  Car          : {assigned_driver.car}")
+    print("-" * 45)
+    print(f"  Driver → Pickup  : {result['driver_to_pickup_steps']} steps")
+    print(f"  Pickup → Dest    : {result['pickup_to_dest_steps']} steps")
+    print(f"  Total Steps      : {result['total_steps']} steps")
+    print("-" * 45)
+    print(f"  Cost         : {cost} EGP")
+    print(f"  Travel Time  : {time} min")
+    print("-" * 45)
+    print(f"  Full Path    : {' → '.join(str(cell) for cell in result['full_path'])}")
+    print("=" * 45)
+
+    return result
   
 
   
