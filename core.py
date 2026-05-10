@@ -122,4 +122,83 @@ def trip_calculator(driver, request, bfs_path1, bfs_path2,
     return result
   
 
-  
+  class RideMatchingSystem:
+
+    def __init__(self, grid, drivers, requests):
+        # system data
+        self.grid = grid
+        self.drivers = drivers
+        self.requests = requests
+
+        # modules
+        self.cost_matrix = CostMatrix(drivers, requests)
+        self.dp_assigner = DPAssigner(self.cost_matrix)
+        self.dc = DivideAndConquer(grid, drivers)
+        self.greedy = GreedySelector()
+        self.bfs = BFS(grid)
+        self.calculator = TripCalculator()
+
+        # results
+        self.results = []
+
+    def run(self):
+
+        # build cost matrix
+        self.cost_matrix.compute()
+        print("\n=== COST MATRIX ===")
+        self.cost_matrix.display()
+
+        # DP assignment
+        assignment = self.dp_assigner.get_assignment()
+        print("\n=== DP ASSIGNMENT ===")
+
+        for i, request in enumerate(self.requests):
+
+            passenger = request.passenger
+            driver = None
+
+            # use DP first
+            if i in assignment:
+                driver = self.drivers[assignment[i]]
+                print(f"R{request.id} → {driver.name} ({driver.id})")
+
+            # fallback to greedy
+            if driver is None:
+                candidates = self.dc.search(passenger)
+                driver = self.greedy.select(candidates, passenger)
+
+            if driver is None:
+                continue
+
+            driver.available = False
+
+            # BFS paths
+            d2p, path1 = self.bfs.search(driver.position, passenger.pickup)
+            p2d, path2 = self.bfs.search(passenger.pickup, passenger.destination)
+
+            total_steps = d2p + p2d
+            cost = total_steps * COST_PER_STEP
+            time = total_steps * TIME_PER_STEP
+            full_path = path1 + path2[1:]
+
+            # save result
+            self.results.append({
+                "request": request,
+                "driver": driver,
+                "cost": cost,
+                "time": time,
+                "path": full_path
+            })
+
+            # output
+            print(f"\n=== TRIP R{request.id} ===")
+            print(f"Driver : {driver.name} ({driver.id})")
+            print(f"Car    : {driver.car}")
+            print(f"Phone  : {driver.phone}")
+            print(f"Steps  : {total_steps}")
+            print(f"Cost   : {cost} EGP")
+            print(f"Time   : {time} min")
+            print(f"Path   : {' → '.join(map(str, full_path))}")
+            print("-" * 45)
+
+        return self.results
