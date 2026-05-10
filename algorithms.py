@@ -356,3 +356,53 @@ if __name__ == "__main__":
     test_3()
 
     print("\nAll tests complete.")
+
+
+
+# Greedy selector that chooses the nearest available driver
+# based on grid distance (Manhattan-style movement)
+# If two drivers have the same distance, the last one is chosen
+
+import math
+
+class GreedySelector:
+
+    def __init__(self):
+        # No data needed
+        pass
+
+    def grid_distance(self, driver, passenger):
+        """
+        Calculate steps between driver and pickup location
+        using grid movement (row + col differences)
+        """
+        row_steps = abs(driver.position.row - passenger.pickup.row)
+        col_steps = abs(driver.position.col - passenger.pickup.col)
+        return row_steps + col_steps
+
+    def select(self, drivers, passenger):
+        """
+        Choose the closest available driver
+        """
+
+        best_driver = None
+        min_distance = math.inf
+
+        for driver in drivers:
+
+            # ignore busy drivers
+            if not driver.available:
+                continue
+
+            current_distance = self.grid_distance(driver, passenger)
+
+            # pick closer driver
+            if current_distance < min_distance:
+                min_distance = current_distance
+                best_driver = driver
+
+            # tie case -> keep current one (last wins)
+            elif current_distance == min_distance:
+                best_driver = driver
+
+        return best_driver
