@@ -1,12 +1,114 @@
-import math
-from models import Cell , Driver , Passenger , RideRequest
+# algorithms.py
+# All algorithm classes: BFS, cost helpers, CostMatrix, DPAssigner, GreedySelector
 
+import math
+from collections import deque
+
+DIRECTIONS = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+
+COST_PER_STEP = 5
+TIME_PER_STEP = 2
+
+
+# ─────────────────────────────────────────────
+# BFS shortest path
+# ─────────────────────────────────────────────
+
+def bfs(grid, N, M, start_r, start_c, end_r, end_c):
+    """
+    BFS shortest path on an N×M grid, avoiding 'X' obstacle cells.
+    """
+    # guard: start or end outside grid
+    if not (0 <= start_r < N and 0 <= start_c < M):
+        raise ValueError(f"BFS start ({start_r},{start_c}) is outside grid ({N}x{M})")
+    if not (0 <= end_r < N and 0 <= end_c < M):
+        raise ValueError(f"BFS end ({end_r},{end_c}) is outside grid ({N}x{M})")
+
+    if (start_r, start_c) == (end_r, end_c):
+        return 0, [(start_r, start_c)]
+
+    parent = {(start_r, start_c): None}
+    queue  = deque([(start_r, start_c, 0)])
+
+    while queue:
+        r, c, dist = queue.popleft()
+        for dr, dc in DIRECTIONS:
+            nr, nc = r + dr, c + dc
+            if (0 <= nr < N and 0 <= nc < M and (nr, nc) not in parent
+                    and grid[nr][nc] != 'X'):
+                parent[(nr, nc)] = (r, c)
+                if nr == end_r and nc == end_c:
+                    path, cur = [], (end_r, end_c)
+                    while cur is not None:
+                        path.append(cur)
+                        cur = parent[cur]
+                    path.reverse()
+                    return dist + 1, path
+                queue.append((nr, nc, dist + 1))
+
+    return math.inf, []   # no path (blocked by obstacles)
+
+
+# ─────────────────────────────────────────────
+# Trip costing helpers
+# ─────────────────────────────────────────────
+
+def compute_trip(driver_to_pickup_dist, pickup_to_dest_dist):
+    total_steps = driver_to_pickup_dist + pickup_to_dest_dist
+    cost        = total_steps * COST_PER_STEP
+    time        = total_steps * TIME_PER_STEP
+    return total_steps, cost, time
+
+
+def trip_result(request, assigned_driver, bfs_path1, bfs_path2, cost, travel_time):
+    return {
+        "request":                request,
+        "assigned_driver":        assigned_driver,
+        "driver_to_pickup_steps": len(bfs_path1) - 1,
+        "pickup_to_dest_steps":   len(bfs_path2) - 1,
+        "total_steps":            len(bfs_path1) + len(bfs_path2) - 2,
+        "cost":                   cost,
+        "travel_time":            travel_time,
+        "full_path":              bfs_path1 + bfs_path2[1:]
+    }
+
+
+def trip_calculator(driver, request, bfs_path1, bfs_path2,
+                    cost_per_step=5, time_per_step=2):
+    total  = len(bfs_path1) + len(bfs_path2) - 2
+    cost   = total * cost_per_step
+    time   = total * time_per_step
+    result = trip_result(request, driver, bfs_path1, bfs_path2, cost, time)
+
+    print("=" * 45)
+    print(f"  TRIP SUMMARY — {request.id}")
+    print("=" * 45)
+    print(f"  Driver       : {driver.name} ({driver.id})")
+    print(f"  Phone        : {driver.phone}")
+    print(f"  Car          : {driver.car}")
+    print("-" * 45)
+    print(f"  Driver → Pickup  : {result['driver_to_pickup_steps']} steps")
+    print(f"  Pickup → Dest    : {result['pickup_to_dest_steps']} steps")
+    print(f"  Total Steps      : {result['total_steps']} steps")
+    print("-" * 45)
+    print(f"  Cost         : {cost} EGP")
+    print(f"  Travel Time  : {time} min")
+    print("-" * 45)
+    print(f"  Full Path    : {' → '.join(str(cell) for cell in result['full_path'])}")
+    print("=" * 45)
+
+    return result
+
+
+# ─────────────────────────────────────────────
+# CostMatrix
+# ─────────────────────────────────────────────
 
 class CostMatrix:
     def __init__(self, drivers, requests):
-        self.drivers = drivers
+        self.drivers  = drivers
         self.requests = requests
-        self.matrix = []
+        self.matrix   = []
 
     def compute(self):
         for driver in self.drivers:
@@ -29,6 +131,9 @@ class CostMatrix:
             print(row)
 
 
+# ─────────────────────────────────────────────
+# DPAssigner
+# ─────────────────────────────────────────────
 
 class DPAssigner:
 
@@ -36,12 +141,17 @@ class DPAssigner:
     TIME_PER_STEP = 2
 
     def __init__(self, drivers, requests):
-        self.drivers = drivers
+        # guard: cannot assign with empty lists
+        if not drivers:
+            raise ValueError("DPAssigner requires at least one driver")
+        if not requests:
+            raise ValueError("DPAssigner requires at least one request")
+        self.drivers  = drivers
         self.requests = requests
         self.R = len(requests)
         self.D = len(drivers)
 
-        self._dp = {}
+        self._dp     = {}
         self._choice = {}
 
     # ─────────────────────────────────────────
@@ -54,24 +164,12 @@ class DPAssigner:
 
     def _trip_cost(self, start_r, start_c, req_idx):
 
-        req = self.requests[req_idx]
-
+        req    = self.requests[req_idx]
         pickup = req.passenger.pickup
-        dest = req.passenger.destination
+        dest   = req.passenger.destination
 
-        to_pickup = self._manhattan(
-            start_r,
-            start_c,
-            pickup.row,
-            pickup.col
-        ) # driver to pickup
-
-        to_dest = self._manhattan(
-            pickup.row,
-            pickup.col,
-            dest.row,
-            dest.col
-        ) # pickup to destination
+        to_pickup = self._manhattan(start_r, start_c, pickup.row, pickup.col)
+        to_dest   = self._manhattan(pickup.row, pickup.col, dest.row, dest.col)
 
         return to_pickup + to_dest
 
@@ -80,20 +178,15 @@ class DPAssigner:
     def _reconstruct(self):
 
         assignments = []
-
-        mask = (1 << self.R) - 1 # R = 3 then mask is 111
+        mask = (1 << self.R) - 1
 
         while mask != 0:
-
-            req_idx, drv_idx = self._choice[mask] # _choice[111] = (2,0) request 2 to driver 0
-
+            req_idx, drv_idx = self._choice[mask]
             assignments.append((req_idx, drv_idx))
+            mask ^= (1 << req_idx)
 
-            mask ^= (1 << req_idx) # remove the request
-
-        assignments.reverse() # because we traced backwards 111 - 011 - 001
-
-        return assignments # list of tuples with ((request_index,driver_index)
+        assignments.reverse()
+        return assignments
 
     # ─────────────────────────────────────────
 
@@ -101,78 +194,54 @@ class DPAssigner:
 
         full_mask = (1 << self.R) - 1
 
-        self._dp[0] = 0
-        self._choice[0] = None # empty stat no assignment yet
+        self._dp[0]     = 0
+        self._choice[0] = None
 
-        drv_pos_cache = { #  this stores position of the driver for every mask {0:(0,0), 1:(5,5)}
+        drv_pos_cache = {
             0: {
-                d: (
-                    self.drivers[d].position.row,
-                    self.drivers[d].position.col
-                )
+                d: (self.drivers[d].position.row, self.drivers[d].position.col)
                 for d in range(self.D)
             }
         }
 
-        for mask in range(full_mask + 1): # loop through masks
+        for mask in range(full_mask + 1):
 
             if mask not in self._dp:
                 continue
 
             cur_cost = self._dp[mask]
-            cur_pos = drv_pos_cache[mask] # {driver_index :(row,column)}
+            cur_pos  = drv_pos_cache[mask]
 
-            next_req = next( # find first unassigned request if mask 101 R0 & R2 done so R1 still not signed
-                (
-                    r for r in range(self.R)
-                    if not (mask >> r & 1) # 101 >> 1 = 010 & 1  = 0 so R1 not signed
-                ),
-                -1 # all signed
+            next_req = next(
+                (r for r in range(self.R) if not (mask >> r & 1)),
+                -1
             )
 
             if next_req == -1:
                 continue
 
-            for d in range(self.D): # assigning next request to every driver
+            for d in range(self.D):
 
-                dr, dc = cur_pos[d] #(row,column)
-
-                trip = self._trip_cost(dr, dc, next_req) # start-> pick & pick -> end
-
+                dr, dc   = cur_pos[d]
+                trip     = self._trip_cost(dr, dc, next_req)
                 new_cost = cur_cost + trip
+                new_mask = mask | (1 << next_req)
 
-                new_mask = mask | (1 << next_req) # 101  new_request is 1 <<  010 | 101 = 111 all request assigned
+                if new_mask not in self._dp or new_cost < self._dp[new_mask]:
 
-                if (
-                    new_mask not in self._dp or
-                    new_cost < self._dp[new_mask]
-                ):
+                    self._dp[new_mask]     = new_cost
+                    self._choice[new_mask] = (next_req, d)
 
-                    self._dp[new_mask] = new_cost
+                    new_pos    = dict(cur_pos)
+                    dest       = self.requests[next_req].passenger.destination
+                    new_pos[d] = (dest.row, dest.col)
 
-                    self._choice[new_mask] = (
-                        next_req,
-                        d
-                    )
-
-                    new_pos = dict(cur_pos) # {dir_index : (row,column)}
-
-                    dest = self.requests[next_req].passenger.destination
-
-                    new_pos[d] = (
-                        dest.row,
-                        dest.col
-                    )
-
-                    drv_pos_cache[new_mask] = new_pos # drv_pos[3] = {new_driver : (row,column)}
+                    drv_pos_cache[new_mask] = new_pos
 
         assignment_path = self._reconstruct()
 
         drv_pos = {
-            d: (
-                self.drivers[d].position.row,
-                self.drivers[d].position.col
-            )
+            d: (self.drivers[d].position.row, self.drivers[d].position.col)
             for d in range(self.D)
         }
 
@@ -180,44 +249,29 @@ class DPAssigner:
 
         for req_idx, drv_idx in assignment_path:
 
-            drv = self.drivers[drv_idx]
-            req = self.requests[req_idx]
-
+            drv    = self.drivers[drv_idx]
+            req    = self.requests[req_idx]
             dr, dc = drv_pos[drv_idx]
 
             pickup = req.passenger.pickup
-            dest = req.passenger.destination
+            dest   = req.passenger.destination
 
-            d2p = self._manhattan(
-                dr,
-                dc,
-                pickup.row,
-                pickup.col
-            )
-
-            p2d = self._manhattan(
-                pickup.row,
-                pickup.col,
-                dest.row,
-                dest.col
-            )
+            d2p = self._manhattan(dr, dc, pickup.row, pickup.col)
+            p2d = self._manhattan(pickup.row, pickup.col, dest.row, dest.col)
 
             total = d2p + p2d
 
             results.append({
-                "request": req,
-                "driver": drv,
+                "request":          req,
+                "driver":           drv,
                 "driver_to_pickup": d2p,
-                "pickup_to_dest": p2d,
-                "total_distance": total,
-                "trip_cost": total * self.COST_PER_STEP,
-                "travel_time": total * self.TIME_PER_STEP,
+                "pickup_to_dest":   p2d,
+                "total_distance":   total,
+                "trip_cost":        total * self.COST_PER_STEP,
+                "travel_time":      total * self.TIME_PER_STEP,
             })
 
-            drv_pos[drv_idx] = (
-                dest.row,
-                dest.col
-            )
+            drv_pos[drv_idx] = (dest.row, dest.col)
 
         results.sort(key=lambda x: x["request"].id)
 
@@ -237,24 +291,9 @@ class DPAssigner:
             drv = r["driver"]
 
             print(f"\nRequest R{req.id} -> Driver {drv.id} ({drv.name})")
-
-            print(
-                f"  Driver start pos     : "
-                f"({drv.position.row}, {drv.position.col})"
-            )
-
-            print(
-                f"  Pickup               : "
-                f"({req.passenger.pickup.row}, "
-                f"{req.passenger.pickup.col})"
-            )
-
-            print(
-                f"  Destination          : "
-                f"({req.passenger.destination.row}, "
-                f"{req.passenger.destination.col})"
-            )
-
+            print(f"  Driver start pos     : ({drv.position.row}, {drv.position.col})")
+            print(f"  Pickup               : ({req.passenger.pickup.row}, {req.passenger.pickup.col})")
+            print(f"  Destination          : ({req.passenger.destination.row}, {req.passenger.destination.col})")
             print(f"  Driver -> Pickup dist: {r['driver_to_pickup']}")
             print(f"  Pickup -> Dest dist  : {r['pickup_to_dest']}")
             print(f"  Total distance       : {r['total_distance']}")
@@ -265,110 +304,14 @@ class DPAssigner:
         print(f"  TOTAL SYSTEM DISTANCE : {total_cost}")
         print("=" * 50)
 
-# ─────────────────────────────────────────────────────────────
-# TEST 1
-# ─────────────────────────────────────────────────────────────
 
-def test_1():
-
-    print("\n" + "=" * 50)
-    print("TEST 1 — 2 drivers, 2 requests, obvious match")
-    print("=" * 50)
-
-    drivers = [
-        Driver("DA", "Alice", "111", "Toyota", 0, 0),
-        Driver("DB", "Bob", "222", "Honda", 9, 9),
-    ]
-
-    requests = [
-        RideRequest(1, Passenger(1, 1, 3, 3)),
-        RideRequest(2, Passenger(8, 8, 6, 6)),
-    ]
-
-    assigner = DPAssigner(drivers, requests)
-
-    results, total_cost = assigner.assign()
-
-    assigner.display(results, total_cost)
-
-
-# ─────────────────────────────────────────────────────────────
-# TEST 2
-# ─────────────────────────────────────────────────────────────
-
-def test_2():
-
-    print("\n" + "=" * 50)
-    print("TEST 2 — 1 driver serves 2 chained requests")
-    print("=" * 50)
-
-    drivers = [
-        Driver("DC", "Carol", "333", "BMW", 0, 0),
-    ]
-
-    requests = [
-        RideRequest(1, Passenger(2, 0, 5, 0)),
-        RideRequest(2, Passenger(6, 0, 9, 0)),
-    ]
-
-    assigner = DPAssigner(drivers, requests)
-
-    results, total_cost = assigner.assign()
-
-    assigner.display(results, total_cost)
-
-
-# ─────────────────────────────────────────────────────────────
-# TEST 3
-# ─────────────────────────────────────────────────────────────
-
-def test_3():
-
-    print("\n" + "=" * 50)
-    print("TEST 3 — 3 drivers, 3 requests")
-    print("=" * 50)
-
-    drivers = [
-        Driver("D1", "Dan", "444", "Ford", 0, 0),
-        Driver("D2", "Eve", "555", "Kia", 5, 0),
-        Driver("D3", "Fred", "666", "Audi", 0, 5),
-    ]
-
-    requests = [
-        RideRequest(1, Passenger(4, 0, 4, 4)),
-        RideRequest(2, Passenger(0, 4, 4, 4)),
-        RideRequest(3, Passenger(5, 5, 9, 9)),
-    ]
-
-    assigner = DPAssigner(drivers, requests)
-
-    results, total_cost = assigner.assign()
-
-    assigner.display(results, total_cost)
-
-
-# ─────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-
-    test_1()
-    test_2()
-    test_3()
-
-    print("\nAll tests complete.")
-
-
-
-# Greedy selector that chooses the nearest available driver
-# based on grid distance (Manhattan-style movement)
-# If two drivers have the same distance, the last one is chosen
-
-import math
+# ─────────────────────────────────────────────
+# GreedySelector
+# ─────────────────────────────────────────────
 
 class GreedySelector:
 
     def __init__(self):
-        # No data needed
         pass
 
     def grid_distance(self, driver, passenger):
@@ -384,25 +327,20 @@ class GreedySelector:
         """
         Choose the closest available driver
         """
-
-        best_driver = None
+        best_driver  = None
         min_distance = math.inf
 
         for driver in drivers:
 
-            # ignore busy drivers
             if not driver.available:
                 continue
 
             current_distance = self.grid_distance(driver, passenger)
 
-            # pick closer driver
             if current_distance < min_distance:
                 min_distance = current_distance
-                best_driver = driver
-
-            # tie case -> keep current one (last wins)
+                best_driver  = driver
             elif current_distance == min_distance:
-                best_driver = driver
+                best_driver = driver   # tie: last wins
 
         return best_driver
