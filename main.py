@@ -41,15 +41,36 @@ class RideMatcher:
         self.bfs = BFS()
         self.trip_manager = TripManager(grid, self.bfs)
         self.analyzer = IntelligentAlgorithmSelector(self.grid, self.drivers, [])
+        self.used_drivers = set()  # Track driver IDs used in current session
+    
+    def reset_used_drivers(self):
+        """Reset the used drivers tracking for a new round"""
+        self.used_drivers = set()
+        # Also reset all drivers to available
+        for driver in self.drivers:
+            driver.available = True
+    
+    def get_available_drivers(self):
+        """Return list of drivers that are available and not used yet"""
+        return [d for d in self.drivers if d.available and d.id not in self.used_drivers]
+    
+    def mark_driver_used(self, driver):
+        """Mark a driver as used/assigned"""
+        self.used_drivers.add(driver.id)
+        driver.available = False
     
     def process_requests_auto(self, requests):
         """Process requests with automatic algorithm selection (silent mode)"""
-        self.analyzer = IntelligentAlgorithmSelector(self.grid, self.drivers, requests)
+        # Reset tracking for this round
+        self.reset_used_drivers()
+        
+        # Update analyzer with current state
+        self.analyzer = IntelligentAlgorithmSelector(self.grid, self.get_available_drivers(), requests)
         
         results = []
         
         # Use DP if recommended and multiple requests
-        if self.analyzer.should_use_dp() and len(requests) > 1:
+        if self.analyzer.should_use_dp() and len(requests) > 1 and len(self.get_available_drivers()) >= len(requests):
             print("\n🎯 Optimizing multiple requests for best efficiency...")
             results = self.process_multiple_requests_dp(requests)
         else:
@@ -58,6 +79,8 @@ class RideMatcher:
                 result = self.process_single_request_auto(request)
                 if result:
                     results.append(result)
+                else:
+                    print(f"⚠️ Request {request.id} could not be completed!")
         
         return results
     
@@ -70,11 +93,21 @@ class RideMatcher:
         print(f"   Destination: {passenger.destination}")
         print(f"{'='*60}")
         
+        # Get available drivers only
+        available_drivers = self.get_available_drivers()
+        
+        if not available_drivers:
+            print("❌ No drivers available for this request!")
+            return None
+        
+        # Update analyzer with available drivers
+        self.analyzer = IntelligentAlgorithmSelector(self.grid, available_drivers, [request])
+        
         # Step 1: Automatically select algorithm and find driver
         driver = self.analyzer.select_driver(passenger, use_dp_assignment=False)
         
         if not driver:
-            print("❌ No driver available!")
+            print("❌ No suitable driver found!")
             return None
         
         # Step 2: BFS Path to pickup
@@ -87,6 +120,7 @@ class RideMatcher:
         # Step 3: Show driver info
         print(f"\n🚗 Assigned Driver:")
         print(f"   Name: {driver.name}")
+        print(f"   ID: {driver.id}")
         print(f"   Car: {driver.car}")
         print(f"   Phone: {driver.phone}")
         print(f"   Current Position: {driver.position}")
@@ -123,6 +157,10 @@ class RideMatcher:
         total_cost = total_distance * self.trip_manager.COST_PER_STEP
         total_time = total_distance * self.trip_manager.TIME_PER_STEP
         
+        # Step 10: Mark driver as used/assigned
+        self.mark_driver_used(driver)
+        print(f"\n✅ Driver {driver.name} has been marked as BUSY for remaining requests!")
+        
         result = {
             'request': request,
             'driver': driver,
@@ -136,13 +174,12 @@ class RideMatcher:
         return result
     
     def process_multiple_requests_dp(self, requests):
-        """Process multiple requests using DP optimization"""
-        assigner = DPAssigner(self.drivers, requests, use_bfs=True, grid=self.grid)
-        assignments, total_cost = assigner.assign()
+        """Process multiple requests using DP optimization with unique drivers"""
+        available_drivers = self.get_available_drivers()
         
-        if not assignments:
-            print("❌ DP optimization failed! Falling back to individual processing...")
-            # Fallback to individual processing
+        if len(available_drivers) < len(requests):
+            print(f"⚠️ Not enough drivers! Need {len(requests)}, have {len(available_drivers)}")
+            print("   Falling back to individual processing...")
             results = []
             for request in requests:
                 result = self.process_single_request_auto(request)
@@ -150,17 +187,35 @@ class RideMatcher:
                     results.append(result)
             return results
         
+        assigner = DPAssigner(available_drivers, requests, use_bfs=True, grid=self.grid)
+        assignments, total_cost = assigner.assign()
+        
+        if not assignments or len(assignments) != len(requests):
+            print("❌ DP optimization failed! Falling back to individual processing...")
+            results = []
+            for request in requests:
+                result = self.process_single_request_auto(request)
+                if result:
+                    results.append(result)
+            return results
+        
+        print(f"\n📊 DP Optimization complete! Total optimal cost: {total_cost} EGP")
+        
         results = []
+        # Store mapping from original driver ID to driver object
+        driver_map = {d.id: d for d in available_drivers}
+        
         for req_idx, drv_idx in assignments:
             request = requests[req_idx]
-            driver = self.drivers[drv_idx]
+            driver = available_drivers[drv_idx]
             
-            # Process individual trip
+            # Process individual trip with assigned driver
             result = self.process_single_request_with_assigned_driver(request, driver)
             if result:
                 result['dp_optimized'] = True
                 results.append(result)
-                driver.available = False
+                # Mark this driver as used
+                self.mark_driver_used(driver)
         
         return results
     
@@ -170,7 +225,7 @@ class RideMatcher:
         
         print(f"\n{'='*60}")
         print(f"🔄 Processing Request {request.id}")
-        print(f"   Driver: {driver.name}")
+        print(f"   Driver: {driver.name} (ID: {driver.id})")
         print(f"   Pickup: {passenger.pickup}")
         print(f"   Destination: {passenger.destination}")
         print(f"{'='*60}")
@@ -179,6 +234,7 @@ class RideMatcher:
         dist_to_pickup, path_to_pickup = self.bfs.find_path(self.grid, driver.position, passenger.pickup)
         
         if dist_to_pickup == math.inf:
+            print(f"❌ No path from driver {driver.name} to pickup!")
             return None
         
         # Show driver info
@@ -201,6 +257,7 @@ class RideMatcher:
         dist_to_dest, path_to_dest = self.bfs.find_path(self.grid, passenger.pickup, passenger.destination)
         
         if dist_to_dest == math.inf:
+            print(f"❌ No path from pickup to destination!")
             return None
         
         # Clear pickup marker
@@ -239,7 +296,7 @@ class RideMatcher:
             driver = result['driver']
             
             print(f"\n🚕 TRIP {request.id}:")
-            print(f"   Driver: {driver.name}")
+            print(f"   Driver: {driver.name} (ID: {driver.id})")
             print(f"   Vehicle: {driver.car}")
             print(f"   Contact: {driver.phone}")
             print(f"   Distance to pickup: {result['dist_to_pickup']} steps")
@@ -257,6 +314,12 @@ class RideMatcher:
         print(f"   Total trips completed: {len(results)}")
         print(f"   Total cost: {total_cost} EGP")
         print(f"   Total time: {total_time} minutes")
+        
+        # Show which drivers were used
+        used_driver_names = [f"{r['driver'].name} (ID: {r['driver'].id})" for r in results]
+        print(f"\n🚗 Drivers assigned:")
+        for name in used_driver_names:
+            print(f"   • {name}")
         print("="*80)
 
 
@@ -345,12 +408,16 @@ class UberGame:
         print("\n📱 PASSENGER REQUESTS 📱")
         print("-"*50)
         
+        # Show available drivers count
+        available_count = len(self.drivers)
+        print(f"\n🚗 Available drivers: {available_count}")
+        
         while True:
             try:
-                num_requests = int(input("How many ride requests? (1-5): "))
-                if 1 <= num_requests <= 5:
+                num_requests = int(input(f"How many ride requests? (1-{min(5, available_count)}): "))
+                if 1 <= num_requests <= min(5, available_count):
                     break
-                print("❌ Please enter between 1 and 5!")
+                print(f"❌ Please enter between 1 and {min(5, available_count)}!")
             except ValueError:
                 print("❌ Please enter a valid number!")
         
@@ -401,11 +468,31 @@ class UberGame:
         self.clear_screen()
         print("\n🚀 PROCESSING RIDE REQUESTS 🚀")
         print("-"*50)
+        print(f"📊 Total requests: {len(requests)}")
+        print(f"🚗 Total drivers available: {len(self.drivers)}")
+        print("-"*50)
         
         self.matcher = RideMatcher(self.grid, self.drivers)
         results = self.matcher.process_requests_auto(requests)
         
         return results
+    
+    def reset_game_state(self):
+        """Reset game state for a new round"""
+        # Clear grid markers but keep obstacles
+        for i in range(self.grid.rows):
+            for j in range(self.grid.cols):
+                if self.grid.grid[i][j] not in ['X', '0']:
+                    self.grid.grid[i][j] = '0'
+        
+        # Reset driver positions and availability
+        for driver in self.drivers:
+            driver.available = True
+            driver.current_path = []
+        
+        # Re-place drivers on grid
+        self.grid.reset_driver_positions()
+        self.grid.place_all_drivers()
     
     def play_again(self):
         """Ask if user wants to play again"""
@@ -431,9 +518,7 @@ class UberGame:
             playing = self.play_again()
             if playing:
                 # Reset for new game
-                self.drivers = []
-                self.grid = None
-                self.matcher = None
+                self.reset_game_state()
         
         print("\n" + "="*60)
         print(f"👋 Thank you for using the Uber System, {self.player_name}! Goodbye! 👋")
