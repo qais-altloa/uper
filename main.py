@@ -1,534 +1,351 @@
 # main.py
-# Main game class and user interface
 
-import os
-import time
-import random
 import math
-from models import Driver, Passenger, RideRequest, Cell
+import random
+
+from models import Driver, Request
 from grid import Grid
-from algorithms import BFS, GreedySelector, DivideAndConquer, DPAssigner, IntelligentAlgorithmSelector
+from algorithms import bfs, greedy_select, dc_select, dp_assign
+
+# ── constants ────────────────────────────────
+COST_PER_STEP = 5   # EGP
+TIME_PER_STEP = 2   # minutes
 
 
-class TripManager:
-    """Manages individual trips and animations"""
-    
-    COST_PER_STEP = 5
-    TIME_PER_STEP = 2
-    
-    def __init__(self, grid, bfs_solver):
-        self.grid = grid
-        self.bfs = bfs_solver
-    
-    def animate_movement(self, driver, path, purpose):
-        """Animate driver movement step by step"""
-        print(f"\n🎬 Driver {driver.name} moving to {purpose}...")
-        
-        for i, step in enumerate(path):
-            self.grid.update_driver_position(driver, step)
-            self.grid.display(f"Step {i+1}/{len(path)} - Moving to {purpose}")
-            time.sleep(0.2)
-        
-        print(f"✅ Driver {driver.name} reached {purpose}!")
+# ─────────────────────────────────────────────
+#  Input helpers
+# ─────────────────────────────────────────────
+
+def read_int(prompt, lo=None, hi=None):
+    while True:
+        try:
+            v = int(input(prompt))
+            if (lo is None or v >= lo) and (hi is None or v <= hi):
+                return v
+            print(f"  Please enter a value between {lo} and {hi}.")
+        except ValueError:
+            print("  Invalid input, try again.")
 
 
-class RideMatcher:
-    """Main system that matches drivers with ride requests"""
-    
-    def __init__(self, grid, drivers):
-        self.grid = grid
-        self.drivers = drivers
-        self.bfs = BFS()
-        self.trip_manager = TripManager(grid, self.bfs)
-        self.analyzer = IntelligentAlgorithmSelector(self.grid, self.drivers, [])
-        self.used_drivers = set()  # Track driver IDs used in current session
-    
-    def reset_used_drivers(self):
-        """Reset the used drivers tracking for a new round"""
-        self.used_drivers = set()
-        # Also reset all drivers to available
-        for driver in self.drivers:
-            driver.available = True
-    
-    def get_available_drivers(self):
-        """Return list of drivers that are available and not used yet"""
-        return [d for d in self.drivers if d.available and d.id not in self.used_drivers]
-    
-    def mark_driver_used(self, driver):
-        """Mark a driver as used/assigned"""
-        self.used_drivers.add(driver.id)
-        driver.available = False
-    
-    def process_requests_auto(self, requests):
-        """Process requests with automatic algorithm selection (silent mode)"""
-        # Reset tracking for this round
-        self.reset_used_drivers()
-        
-        # Update analyzer with current state
-        self.analyzer = IntelligentAlgorithmSelector(self.grid, self.get_available_drivers(), requests)
-        
-        results = []
-        
-        # Use DP if recommended and multiple requests
-        if self.analyzer.should_use_dp() and len(requests) > 1 and len(self.get_available_drivers()) >= len(requests):
-            print("\n🎯 Optimizing multiple requests for best efficiency...")
-            results = self.process_multiple_requests_dp(requests)
+def read_cell(prompt, grid):
+    print(prompt)
+    while True:
+        r = read_int(f"  row    (0-{grid.rows-1}): ", 0, grid.rows - 1)
+        c = read_int(f"  column (0-{grid.cols-1}): ", 0, grid.cols - 1)
+        if grid.is_blocked(r, c):
+            print("  That cell is blocked (X). Choose another.")
         else:
-            # Process each request individually
-            for request in requests:
-                result = self.process_single_request_auto(request)
-                if result:
-                    results.append(result)
-                else:
-                    print(f"⚠️ Request {request.id} could not be completed!")
-        
-        return results
-    
-    def process_single_request_auto(self, request):
-        """Process a single request with automatic algorithm selection"""
-        passenger = request.passenger
-        print(f"\n{'='*60}")
-        print(f"🔄 Processing Request {request.id}")
-        print(f"   Pickup: {passenger.pickup}")
-        print(f"   Destination: {passenger.destination}")
-        print(f"{'='*60}")
-        
-        # Get available drivers only
-        available_drivers = self.get_available_drivers()
-        
-        if not available_drivers:
-            print("❌ No drivers available for this request!")
-            return None
-        
-        # Update analyzer with available drivers
-        self.analyzer = IntelligentAlgorithmSelector(self.grid, available_drivers, [request])
-        
-        # Step 1: Automatically select algorithm and find driver
-        driver = self.analyzer.select_driver(passenger, use_dp_assignment=False)
-        
-        if not driver:
-            print("❌ No suitable driver found!")
-            return None
-        
-        # Step 2: BFS Path to pickup
-        dist_to_pickup, path_to_pickup = self.bfs.find_path(self.grid, driver.position, passenger.pickup)
-        
-        if dist_to_pickup == math.inf:
-            print(f"❌ No path from driver {driver.name} to pickup!")
-            return None
-        
-        # Step 3: Show driver info
-        print(f"\n🚗 Assigned Driver:")
-        print(f"   Name: {driver.name}")
-        print(f"   ID: {driver.id}")
-        print(f"   Car: {driver.car}")
-        print(f"   Phone: {driver.phone}")
-        print(f"   Current Position: {driver.position}")
-        
-        # Step 4: Animate driver moving to pickup
-        self.trip_manager.animate_movement(driver, path_to_pickup, f"pickup point {passenger.pickup}")
-        
-        # Step 5: Show trip cost and time to pickup
-        cost_to_pickup = dist_to_pickup * self.trip_manager.COST_PER_STEP
-        time_to_pickup = dist_to_pickup * self.trip_manager.TIME_PER_STEP
-        
-        print(f"\n💰 Trip to Pickup:")
-        print(f"   Distance: {dist_to_pickup} steps")
-        print(f"   Cost: {cost_to_pickup} EGP")
-        print(f"   Time: {time_to_pickup} minutes")
-        
-        # Step 6: Get passenger agreement
-        input("\n⏎ Press Enter when passenger agrees to start the ride...")
-        
-        # Step 7: BFS Path to destination
-        dist_to_dest, path_to_dest = self.bfs.find_path(self.grid, passenger.pickup, passenger.destination)
-        
-        if dist_to_dest == math.inf:
-            print(f"❌ No path from pickup to destination!")
-            return None
-        
-        # Step 8: Animate driver moving to destination
-        # Clear pickup marker
-        self.grid.grid[passenger.pickup.row][passenger.pickup.col] = '0'
-        self.trip_manager.animate_movement(driver, path_to_dest, f"destination {passenger.destination}")
-        
-        # Step 9: Calculate total trip
-        total_distance = dist_to_pickup + dist_to_dest
-        total_cost = total_distance * self.trip_manager.COST_PER_STEP
-        total_time = total_distance * self.trip_manager.TIME_PER_STEP
-        
-        # Step 10: Mark driver as used/assigned
-        self.mark_driver_used(driver)
-        print(f"\n✅ Driver {driver.name} has been marked as BUSY for remaining requests!")
-        
-        result = {
-            'request': request,
-            'driver': driver,
-            'dist_to_pickup': dist_to_pickup,
-            'dist_to_dest': dist_to_dest,
-            'total_distance': total_distance,
-            'cost': total_cost,
-            'time': total_time
-        }
-        
-        return result
-    
-    def process_multiple_requests_dp(self, requests):
-        """Process multiple requests using DP optimization with unique drivers"""
-        available_drivers = self.get_available_drivers()
-        
-        if len(available_drivers) < len(requests):
-            print(f"⚠️ Not enough drivers! Need {len(requests)}, have {len(available_drivers)}")
-            print("   Falling back to individual processing...")
-            results = []
-            for request in requests:
-                result = self.process_single_request_auto(request)
-                if result:
-                    results.append(result)
-            return results
-        
-        assigner = DPAssigner(available_drivers, requests, use_bfs=True, grid=self.grid)
-        assignments, total_cost = assigner.assign()
-        
-        if not assignments or len(assignments) != len(requests):
-            print("❌ DP optimization failed! Falling back to individual processing...")
-            results = []
-            for request in requests:
-                result = self.process_single_request_auto(request)
-                if result:
-                    results.append(result)
-            return results
-        
-        print(f"\n📊 DP Optimization complete! Total optimal cost: {total_cost} EGP")
-        
+            return r, c
+
+
+# ─────────────────────────────────────────────
+#  Trip processing
+# ─────────────────────────────────────────────
+
+def process_trip(grid, driver, request, algo_name):
+    """
+    Runs BFS for driver->pickup and pickup->destination.
+    Shows fare estimate and asks passenger to confirm (cancellation point).
+    Asks for a rating after a completed trip.
+    Returns a result dict, or None on failure / cancellation.
+    """
+    print(f"\n  Algorithm used : {algo_name}")
+    print(f"  Assigned driver: D{driver.id} – {driver.name}  "
+          f"| Rating: {driver.rating}/5.0  | Position: {driver.position}")
+
+    # driver -> pickup
+    d1, path1 = bfs(grid, driver.position, request.pickup)
+    if d1 == math.inf:
+        print("  ERROR: No path from driver to pickup (blocked grid).")
+        return None
+
+    # pickup -> destination
+    d2, path2 = bfs(grid, request.pickup, request.destination)
+    if d2 == math.inf:
+        print("  ERROR: No path from pickup to destination (blocked grid).")
+        return None
+
+    total = d1 + d2
+    cost  = total * COST_PER_STEP
+    time_ = total * TIME_PER_STEP
+
+    print(f"  Driver -> Pickup  : {d1} steps  |  path: {' -> '.join(str(p) for p in path1)}")
+    print(f"  Pickup -> Dest    : {d2} steps  |  path: {' -> '.join(str(p) for p in path2)}")
+    print(f"  Total distance    : {total} steps")
+    print(f"  Estimated cost    : {cost} EGP")
+    print(f"  Estimated time    : {time_} minutes")
+
+    # ── Cancellation check ───────────────────────────────────
+    confirm = input("  Confirm ride? (yes/no): ").strip().lower()
+    if confirm not in ("yes", "y"):
+        print("  Ride cancelled. Driver is available again.")
+        return None                         # driver stays available
+
+    # ── Trip completed – ask for rating ─────────────────────
+    driver.available = False
+    print("  Ride completed!")
+
+    while True:
+        try:
+            stars = int(input(f"  Rate driver {driver.name} (1-5): "))
+            if 1 <= stars <= 5:
+                driver.add_rating(stars)
+                print(f"  New rating for {driver.name}: {driver.rating}/5.0")
+                break
+            print("  Please enter a number between 1 and 5.")
+        except ValueError:
+            print("  Invalid input.")
+
+    return {"request": request, "driver": driver,
+            "d_to_pickup": d1, "d_to_dest": d2,
+            "total": total, "cost": cost, "time": time_,
+            "cancelled": False}
+
+
+# ─────────────────────────────────────────────
+#  Algorithm selector
+# ─────────────────────────────────────────────
+
+def select_algorithm(drivers, requests, grid):
+    """
+    Decides which algorithm to use:
+      - 1 request           → Greedy
+      - Large grid (>900)   → Divide & Conquer
+      - Multiple requests   → DP
+    """
+    if len(requests) > 1:
+        return "DP"
+    if grid.rows * grid.cols > 900:
+        return "Divide & Conquer"
+    return "Greedy"
+
+
+def run_algorithm(algo, drivers, requests, grid):
+    """
+    Runs the chosen algorithm and returns a list of result dicts.
+    """
+    available = [d for d in drivers if d.available]
+
+    if algo == "DP":
+        if len(available) < len(requests):
+            print(f"\n  Not enough drivers ({len(available)}) for {len(requests)} requests.")
+            print("  Falling back to Greedy per request.\n")
+            algo = "Greedy (fallback)"
+
+    if algo == "DP":
+        assignments = dp_assign(available, requests)
         results = []
-        # Store mapping from original driver ID to driver object
-        driver_map = {d.id: d for d in available_drivers}
-        
-        for req_idx, drv_idx in assignments:
-            request = requests[req_idx]
-            driver = available_drivers[drv_idx]
-            
-            # Process individual trip with assigned driver
-            result = self.process_single_request_with_assigned_driver(request, driver)
-            if result:
-                result['dp_optimized'] = True
-                results.append(result)
-                # Mark this driver as used
-                self.mark_driver_used(driver)
-        
+        for req, drv in assignments:
+            print(f"\n--- Request R{req.id} ---")
+            r = process_trip(grid, drv, req, "DP")
+            if r:
+                results.append(r)
         return results
-    
-    def process_single_request_with_assigned_driver(self, request, driver):
-        """Process request with pre-assigned driver"""
-        passenger = request.passenger
-        
-        print(f"\n{'='*60}")
-        print(f"🔄 Processing Request {request.id}")
-        print(f"   Driver: {driver.name} (ID: {driver.id})")
-        print(f"   Pickup: {passenger.pickup}")
-        print(f"   Destination: {passenger.destination}")
-        print(f"{'='*60}")
-        
-        # BFS Path to pickup
-        dist_to_pickup, path_to_pickup = self.bfs.find_path(self.grid, driver.position, passenger.pickup)
-        
-        if dist_to_pickup == math.inf:
-            print(f"❌ No path from driver {driver.name} to pickup!")
-            return None
-        
-        # Show driver info
-        print(f"\n🚗 Driver Details:")
-        print(f"   Name: {driver.name}")
-        print(f"   Car: {driver.car}")
-        print(f"   Phone: {driver.phone}")
-        
-        # Animate to pickup
-        self.trip_manager.animate_movement(driver, path_to_pickup, f"pickup point {passenger.pickup}")
-        
-        # Show cost to pickup
-        cost_to_pickup = dist_to_pickup * self.trip_manager.COST_PER_STEP
-        time_to_pickup = dist_to_pickup * self.trip_manager.TIME_PER_STEP
-        print(f"\n💰 Cost to pickup: {cost_to_pickup} EGP | Time: {time_to_pickup} min")
-        
-        input("\n⏎ Press Enter when passenger agrees to start the ride...")
-        
-        # BFS to destination
-        dist_to_dest, path_to_dest = self.bfs.find_path(self.grid, passenger.pickup, passenger.destination)
-        
-        if dist_to_dest == math.inf:
-            print(f"❌ No path from pickup to destination!")
-            return None
-        
-        # Clear pickup marker
-        self.grid.grid[passenger.pickup.row][passenger.pickup.col] = '0'
-        
-        # Animate to destination
-        self.trip_manager.animate_movement(driver, path_to_dest, f"destination {passenger.destination}")
-        
-        total_distance = dist_to_pickup + dist_to_dest
-        total_cost = total_distance * self.trip_manager.COST_PER_STEP
-        total_time = total_distance * self.trip_manager.TIME_PER_STEP
-        
-        result = {
-            'request': request,
-            'driver': driver,
-            'dist_to_pickup': dist_to_pickup,
-            'dist_to_dest': dist_to_dest,
-            'total_distance': total_distance,
-            'cost': total_cost,
-            'time': total_time
-        }
-        
-        return result
-    
-    def generate_report(self, results):
-        """Generate final report showing trip details"""
-        print("\n" + "="*80)
-        print("📋 FINAL TRIP REPORT")
-        print("="*80)
-        
-        total_cost = 0
-        total_time = 0
-        
-        for result in results:
-            request = result['request']
-            driver = result['driver']
-            
-            print(f"\n🚕 TRIP {request.id}:")
-            print(f"   Driver: {driver.name} (ID: {driver.id})")
-            print(f"   Vehicle: {driver.car}")
-            print(f"   Contact: {driver.phone}")
-            print(f"   Distance to pickup: {result['dist_to_pickup']} steps")
-            print(f"   Distance to destination: {result['dist_to_dest']} steps")
-            print(f"   Total distance: {result['total_distance']} steps")
-            print(f"   Cost: {result['cost']} EGP")
-            print(f"   Time: {result['time']} minutes")
-            
-            total_cost += result['cost']
-            total_time += result['time']
-        
-        print("\n" + "="*80)
-        print("💰 SUMMARY")
-        print("="*80)
-        print(f"   Total trips completed: {len(results)}")
-        print(f"   Total cost: {total_cost} EGP")
-        print(f"   Total time: {total_time} minutes")
-        
-        # Show which drivers were used
-        used_driver_names = [f"{r['driver'].name} (ID: {r['driver'].id})" for r in results]
-        print(f"\n🚗 Drivers assigned:")
-        for name in used_driver_names:
-            print(f"   • {name}")
-        print("="*80)
 
-
-class UberGame:
-    """Main game class handling user interaction"""
-    
-    def __init__(self):
-        self.player_name = ""
-        self.grid = None
-        self.drivers = []
-        self.matcher = None
-    
-    def clear_screen(self):
-        """Clear console screen"""
-        os.system('cls' if os.name == 'nt' else 'clear')
-    
-    def print_header(self):
-        """Print game header"""
-        print("="*60)
-        print("   🚕 SMART UBER RIDE MATCHING SYSTEM 🚕")
-        print("="*60)
-    
-    def get_player_name(self):
-        """Get player name"""
-        self.print_header()
-        self.player_name = input("\n👤 Please enter your name: ").strip()
-        if not self.player_name:
-            self.player_name = "Guest"
-        print(f"\n✨ Hello, {self.player_name}! Welcome to the Uber System! ✨")
-        input("\n⏎ Press Enter to continue...")
-    
-    def setup_grid(self):
-        """Setup grid with user input"""
-        self.clear_screen()
-        print("\n🏙️  INITIALIZING CITY GRID 🏙️")
-        print("-"*50)
-        
-        while True:
-            try:
-                rows = int(input("📏 Enter number of rows (5-20): "))
-                cols = int(input("📏 Enter number of columns (5-20): "))
-                if 5 <= rows <= 20 and 5 <= cols <= 20:
-                    break
-                print("❌ Please enter values between 5 and 20!")
-            except ValueError:
-                print("❌ Please enter valid numbers!")
-        
-        self.grid = Grid(rows, cols)
-        
-        # Generate obstacles
-        print("\n🏗️  Generating obstacles (30% of grid)...")
-        self.grid.generate_obstacles(30)
-        
-        # Place drivers
-        num_drivers = int(input("\n🚗 How many drivers do you want to add? (1-10): "))
-        num_drivers = max(1, min(10, num_drivers))
-        
-        free_positions = self.grid.get_free_positions()
-        random.shuffle(free_positions)
-        
-        names = ["Ahmed", "Sara", "Mohamed", "Fatima", "Omar", "Laila", "Youssef", "Mariam", "Khaled", "Nour"]
-        cars = ["Toyota Camry", "Honda Civic", "Hyundai Elantra", "Kia Cerato", "Nissan Sunny", 
-                "Tesla Model 3", "BMW 320i", "Mercedes C200", "Audi A4", "Ford Focus"]
-        phones = ["0100", "0111", "0122", "0133", "0144", "0155", "0166", "0177", "0188", "0199"]
-        
-        for i in range(min(num_drivers, len(free_positions))):
-            row, col = free_positions[i]
-            driver = Driver(
-                id=i+1,
-                name=names[i % len(names)],
-                phone=phones[i % len(phones)] + str(random.randint(1000, 9999)),
-                car=cars[i % len(cars)],
-                row=row,
-                col=col
-            )
-            self.drivers.append(driver)
-            self.grid.place_driver(driver)
-        
-        print(f"\n✅ Added {len(self.drivers)} drivers to the grid!")
-        self.grid.display("Initial City Grid")
-        input("\n⏎ Press Enter to continue...")
-    
-    def create_requests(self):
-        """Create ride requests from user"""
-        self.clear_screen()
-        print("\n📱 PASSENGER REQUESTS 📱")
-        print("-"*50)
-        
-        # Show available drivers count
-        available_count = len(self.drivers)
-        print(f"\n🚗 Available drivers: {available_count}")
-        
-        while True:
-            try:
-                num_requests = int(input(f"How many ride requests? (1-{min(5, available_count)}): "))
-                if 1 <= num_requests <= min(5, available_count):
-                    break
-                print(f"❌ Please enter between 1 and {min(5, available_count)}!")
-            except ValueError:
-                print("❌ Please enter a valid number!")
-        
-        requests = []
-        
-        for i in range(num_requests):
-            print(f"\n{'='*40}")
-            print(f"📞 REQUEST {i+1}:")
-            print(f"{'='*40}")
-            
-            while True:
-                try:
-                    print("\n📍 Pickup location:")
-                    pickup_row = int(input("   Row: "))
-                    pickup_col = int(input("   Column: "))
-                    
-                    print("\n🏁 Destination:")
-                    dest_row = int(input("   Row: "))
-                    dest_col = int(input("   Column: "))
-                    
-                    if (0 <= pickup_row < self.grid.rows and 0 <= pickup_col < self.grid.cols and
-                        0 <= dest_row < self.grid.rows and 0 <= dest_col < self.grid.cols):
-                        
-                        if not self.grid.is_blocked(pickup_row, pickup_col) and not self.grid.is_blocked(dest_row, dest_col):
-                            break
-                        else:
-                            print("❌ Location cannot be on blocked cells (X)!")
-                    else:
-                        print(f"❌ Positions must be between 0-{self.grid.rows-1} rows and 0-{self.grid.cols-1} columns!")
-                except ValueError:
-                    print("❌ Please enter valid numbers!")
-            
-            passenger = Passenger(pickup_row, pickup_col, dest_row, dest_col)
-            request = RideRequest(i+1, passenger)
-            requests.append(request)
-            
-            # Display on grid temporarily
-            self.grid.place_passenger(passenger)
-            self.grid.place_destination(passenger)
-        
-        self.grid.display("Grid with all requests")
-        input("\n⏎ Press Enter to continue...")
-        
-        return requests
-    
-    def process_requests(self, requests):
-        """Process ride requests with automatic algorithm selection"""
-        self.clear_screen()
-        print("\n🚀 PROCESSING RIDE REQUESTS 🚀")
-        print("-"*50)
-        print(f"📊 Total requests: {len(requests)}")
-        print(f"🚗 Total drivers available: {len(self.drivers)}")
-        print("-"*50)
-        
-        self.matcher = RideMatcher(self.grid, self.drivers)
-        results = self.matcher.process_requests_auto(requests)
-        
+    if algo == "Divide & Conquer":
+        results = []
+        for req in requests:
+            print(f"\n--- Request R{req.id} ---")
+            drv = dc_select([d for d in drivers if d.available],
+                            req.pickup, grid.rows, grid.cols)
+            if drv is None:
+                print("  No available driver found.")
+                continue
+            r = process_trip(grid, drv, req, "Divide & Conquer")
+            if r:
+                results.append(r)
         return results
-    
-    def reset_game_state(self):
-        """Reset game state for a new round"""
-        # Clear grid markers but keep obstacles
-        for i in range(self.grid.rows):
-            for j in range(self.grid.cols):
-                if self.grid.grid[i][j] not in ['X', '0']:
-                    self.grid.grid[i][j] = '0'
-        
-        # Reset driver positions and availability
-        for driver in self.drivers:
-            driver.available = True
-            driver.current_path = []
-        
-        # Re-place drivers on grid
-        self.grid.reset_driver_positions()
-        self.grid.place_all_drivers()
-    
-    def play_again(self):
-        """Ask if user wants to play again"""
-        print("\n" + "="*60)
-        play = input("🎮 Do you want to play another round? (yes/no): ").strip().lower()
-        return play in ['yes', 'y']
-    
-    def run(self):
-        """Main game loop"""
-        self.get_player_name()
-        
-        playing = True
-        while playing:
-            self.setup_grid()
-            requests = self.create_requests()
-            results = self.process_requests(requests)
-            
-            if results:
-                self.matcher.generate_report(results)
-            else:
-                print("\n❌ No trips were completed successfully!")
-            
-            playing = self.play_again()
-            if playing:
-                # Reset for new game
-                self.reset_game_state()
-        
-        print("\n" + "="*60)
-        print(f"👋 Thank you for using the Uber System, {self.player_name}! Goodbye! 👋")
-        print("="*60)
+
+    # Greedy (default / fallback)
+    results = []
+    for req in requests:
+        print(f"\n--- Request R{req.id} ---")
+        drv = greedy_select([d for d in drivers if d.available], req.pickup)
+        if drv is None:
+            print("  No available driver found.")
+            continue
+        r = process_trip(grid, drv, req, algo)
+        if r:
+            results.append(r)
+    return results
 
 
-# ============================================
-# MAIN EXECUTION
-# ============================================
+# ─────────────────────────────────────────────
+#  Summary report
+# ─────────────────────────────────────────────
+
+def print_report(results):
+    print("\n" + "=" * 50)
+    print("  FINAL SUMMARY")
+    print("=" * 50)
+    for res in results:
+        req = res["request"]
+        drv = res["driver"]
+        print(f"  R{req.id} -> D{drv.id} ({drv.name})  | Rating: {drv.rating}/5.0")
+        print(f"      Driver->Pickup : {res['d_to_pickup']} steps")
+        print(f"      Pickup->Dest   : {res['d_to_dest']} steps")
+        print(f"      Total          : {res['total']} steps")
+        print(f"      Cost           : {res['cost']} EGP")
+        print(f"      Time           : {res['time']} min")
+        print()
+    print("=" * 50)
+
+
+# ─────────────────────────────────────────────
+#  Setup helpers
+# ─────────────────────────────────────────────
+
+DRIVER_NAMES = ["Ahmed", "Sara", "Mohamed", "Fatima", "Omar",
+                "Laila", "Youssef", "Mariam", "Khaled", "Nour"]
+
+
+def setup_grid():
+    print("\n-- Grid Setup --")
+    rows = read_int("Rows    (5-30): ", 5, 30)
+    cols = read_int("Columns (5-30): ", 5, 30)
+    grid = Grid(rows, cols)
+
+    # random obstacles ~25 %
+    total = rows * cols
+    for _ in range(total // 4):
+        r = random.randint(0, rows - 1)
+        c = random.randint(0, cols - 1)
+        grid.add_obstacle(r, c)
+
+    return grid
+
+
+def setup_drivers(grid):
+    print("\n-- Driver Setup --")
+    n = read_int("Number of drivers (1-10): ", 1, 10)
+
+    free = [(r, c)
+            for r in range(grid.rows)
+            for c in range(grid.cols)
+            if grid.is_free(r, c)]
+    random.shuffle(free)
+
+    drivers = []
+    for i in range(min(n, len(free))):
+        r, c = free[i]
+        drv = Driver(i + 1, DRIVER_NAMES[i % len(DRIVER_NAMES)], r, c)
+        drivers.append(drv)
+        grid.place(r, c, f"D{drv.id}")
+
+    print(f"Placed {len(drivers)} driver(s).")
+    return drivers
+
+
+def setup_requests(grid, max_requests):
+    print("\n-- Ride Requests --")
+    n = read_int(f"Number of requests (1-{max_requests}): ", 1, max_requests)
+    requests = []
+    for i in range(n):
+        print(f"\nRequest {i+1}:")
+        pr, pc = read_cell("  Pickup location:", grid)
+        dr, dc = read_cell("  Destination:", grid)
+        req = Request(i + 1, pr, pc, dr, dc)
+        requests.append(req)
+        grid.place(pr, pc, 'P')
+        grid.place(dr, dc, 'R')
+    return requests
+
+
+# ─────────────────────────────────────────────
+#  Main
+# ─────────────────────────────────────────────
+
+def run_hard_test():
+    """Hard test case from the project PDF: 500x500 grid, 20 drivers, 5 requests."""
+    print("\n" + "=" * 50)
+    print("  HARD TEST CASE  (500x500, 20 drivers, 5 requests)")
+    print("=" * 50)
+
+    grid = Grid(500, 500)   # no obstacles so BFS == Manhattan
+
+    drivers_data = [
+        (1,"D1",10,20),(2,"D2",50,60),(3,"D3",100,120),(4,"D4",130,300),
+        (5,"D5",200,200),(6,"D6",250,250),(7,"D7",300,100),(8,"D8",320,330),
+        (9,"D9",400,450),(10,"D10",450,100),(11,"D11",70,420),(12,"D12",90,90),
+        (13,"D13",160,170),(14,"D14",210,50),(15,"D15",260,400),(16,"D16",350,250),
+        (17,"D17",410,210),(18,"D18",470,470),(19,"D19",20,480),(20,"D20",499,10),
+    ]
+    requests_data = [
+        (1,40,50,100,100),(2,220,210,300,300),
+        (3,480,460,450,430),(4,80,400,20,350),(5,340,260,410,300),
+    ]
+
+    drivers  = [Driver(d, n, r, c) for d, n, r, c in drivers_data]
+    requests = [Request(i, pr, pc, dr, dc) for i, pr, pc, dr, dc in requests_data]
+
+    # Force equal ratings so pure distance decides (matches PDF)
+    for drv in drivers:
+        drv.rating = 5.0
+
+    print("\nDrivers placed. Running DP assignment...\n")
+
+    assignments = dp_assign(drivers, requests)
+
+    results = []
+    for req, drv in assignments:
+        d1 = drv.position.manhattan(req.pickup)
+        d2 = req.pickup.manhattan(req.destination)
+        total = d1 + d2
+        cost  = total * COST_PER_STEP
+        time_ = total * TIME_PER_STEP
+        drv.available = False
+        results.append({
+            "request": req, "driver": drv,
+            "d_to_pickup": d1, "d_to_dest": d2,
+            "total": total, "cost": cost, "time": time_,
+        })
+
+    print_report(results)
+
+
+def main():
+    print("=" * 50)
+    print("   SMART UBER RIDE MATCHING SYSTEM")
+    print("=" * 50)
+
+    name = input("Enter your name: ").strip() or "Guest"
+    print(f"Hello, {name}!\n")
+
+    while True:
+        print("\nWhat would you like to do?")
+        print("  1. Start a new ride session")
+        print("  2. Run hard test case (500x500)")
+        print("  3. Exit")
+
+        choice = read_int("Choose (1/2/3): ", 1, 3)
+
+        if choice == 3:
+            break
+
+        if choice == 2:
+            run_hard_test()
+            continue
+
+        # choice == 1: normal session
+        grid    = setup_grid()
+        drivers = setup_drivers(grid)
+        grid.display("City Grid")
+
+        requests = setup_requests(grid, max_requests=min(5, len(drivers)))
+        grid.display("Grid with Requests")
+
+        algo = select_algorithm(drivers, requests, grid)
+        print(f"\nSelected algorithm: {algo}")
+
+        results = run_algorithm(algo, drivers, requests, grid)
+
+        if results:
+            print_report(results)
+        else:
+            print("\nNo trips were completed.")
+
+    print(f"\nGoodbye, {name}!")
+
 
 if __name__ == "__main__":
-    game = UberGame()
-    game.run()
+    main()
