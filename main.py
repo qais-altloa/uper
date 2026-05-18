@@ -6,7 +6,7 @@ import random
 import math
 
 from models import Driver, Passenger, RideRequest, Cell
-from Grid import Grid
+from grid import Grid
 from algorithms import BFS, GreedySelector, DivideAndConquer, DPAssigner
 from statistics import show as show_stats
 
