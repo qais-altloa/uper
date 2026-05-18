@@ -5,187 +5,204 @@ from collections import deque
 from models import Cell
 
 
-# ─────────────────────────────────────────────
-#  BFS  –  shortest path on grid
-# ─────────────────────────────────────────────
+# ── BFS ──────────────────────────────────────────────────────────────────────
 
-def bfs(grid, start: Cell, end: Cell):
-    """
-    Returns (distance, path) where path is a list of Cell.
-    Returns (inf, []) when no path exists.
-    """
-    if start == end:
-        return 0, [start]
+class BFS:
+    """Shortest-path finder on the grid."""
 
     DIRS = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-    visited = {(start.row, start.col): None}   # cell -> parent
-    queue = deque([(start.row, start.col, 0)])
 
-    while queue:
-        r, c, dist = queue.popleft()
+    @staticmethod
+    def find_path(grid, start, end):
+        """
+        Returns (distance, path) or (math.inf, []) if unreachable.
+        distance is the number of steps (edges), path is a list of Cell.
+        """
+        if start == end:
+            return 0, [start]
 
-        for dr, dc in DIRS:
-            nr, nc = r + dr, c + dc
-            if (grid.in_bounds(nr, nc)
-                    and not grid.is_blocked(nr, nc)
-                    and (nr, nc) not in visited):
+        N, M   = grid.get_size()
+        parent = {(start.row, start.col): None}
+        queue  = deque([(start.row, start.col, 0)])
 
-                visited[(nr, nc)] = (r, c)
+        while queue:
+            r, c, dist = queue.popleft()
 
-                if nr == end.row and nc == end.col:
-                    # reconstruct
-                    path, cur = [], (nr, nc)
-                    while cur is not None:
-                        path.append(Cell(cur[0], cur[1]))
-                        cur = visited[cur]
-                    path.reverse()
-                    return dist + 1, path
+            for dr, dc in BFS.DIRS:
+                nr, nc = r + dr, c + dc
+                if (0 <= nr < N and 0 <= nc < M
+                        and (nr, nc) not in parent
+                        and not grid.is_blocked(nr, nc)):
 
-                queue.append((nr, nc, dist + 1))
+                    parent[(nr, nc)] = (r, c)
 
-    return math.inf, []
+                    if nr == end.row and nc == end.col:
+                        # reconstruct path
+                        path, cur = [], (nr, nc)
+                        while cur is not None:
+                            path.append(Cell(cur[0], cur[1]))
+                            cur = parent[cur]
+                        path.reverse()
+                        return dist + 1, path
 
+                    queue.append((nr, nc, dist + 1))
 
-# ─────────────────────────────────────────────
-#  GREEDY  –  pick nearest available driver
-# ─────────────────────────────────────────────
-
-def greedy_select(drivers, pickup: Cell):
-    """
-    Returns the best available driver using a combined score:
-        score = distance + (5.0 - rating) * 2
-    Lower is better, so high-rated nearby drivers win.
-    Returns None when no driver is available.
-    """
-    best, best_score = None, math.inf
-    for driver in drivers:
-        if not driver.available:
-            continue
-        distance      = driver.position.manhattan(pickup)
-        rating_penalty = (5.0 - driver.rating) * 2   # 0 at 5-star, up to 8 at 1-star
-        score = distance + rating_penalty
-        if score < best_score:
-            best_score = score
-            best = driver
-    return best
+        return math.inf, []
 
 
-# ─────────────────────────────────────────────
-#  DIVIDE & CONQUER  –  region-based search
-# ─────────────────────────────────────────────
+# ── Greedy ───────────────────────────────────────────────────────────────────
 
-def dc_select(drivers, pickup: Cell, grid_rows, grid_cols):
-    """
-    Splits the grid into 4 quadrants.
-    First searches the quadrant that contains the pickup point.
-    Falls back to all other quadrants if nothing is found there.
-    Returns the nearest available driver (or None).
-    """
-    mid_r = grid_rows // 2
-    mid_c = grid_cols // 2
+class GreedySelector:
+    """Pick the nearest available driver by Manhattan distance."""
 
-    def quadrant(cell):
-        above = cell.row < mid_r
-        left  = cell.col < mid_c
-        if above and left:   return 0   # top-left
-        if above:            return 1   # top-right
-        if left:             return 2   # bottom-left
-        return 3                        # bottom-right
-
-    def nearest_in(quad):
+    @staticmethod
+    def select(drivers, passenger):
+        """Returns (best_driver, manhattan_distance) or (None, inf)."""
         best, best_dist = None, math.inf
-        for driver in drivers:
-            if driver.available and quadrant(driver.position) == quad:
-                d = driver.position.manhattan(pickup)
-                if d < best_dist:
-                    best_dist = d
-                    best = driver
+        for d in drivers:
+            if d.available:
+                dist = d.position.manhattan(passenger.pickup)
+                if dist < best_dist:
+                    best_dist = dist
+                    best = d
+        return best, best_dist
+
+
+# ── Divide & Conquer ─────────────────────────────────────────────────────────
+
+class DivideAndConquer:
+    """
+    Split the grid into 4 quadrants.
+    Search the passenger's quadrant first; fall back to others if empty.
+    """
+
+    def __init__(self, grid):
+        self.rows, self.cols = grid.get_size()
+
+    def _quadrant(self, pos):
+        mid_r = self.rows // 2
+        mid_c = self.cols // 2
+        top   = pos.row < mid_r
+        left  = pos.col < mid_c
+        if   top  and left:  return 0   # top-left
+        elif top:            return 1   # top-right
+        elif left:           return 2   # bottom-left
+        else:                return 3   # bottom-right
+
+    def _nearest_in(self, drivers, passenger, quadrant):
+        best, best_dist = None, math.inf
+        for d in drivers:
+            if d.available and self._quadrant(d.position) == quadrant:
+                dist = d.position.manhattan(passenger.pickup)
+                if dist < best_dist:
+                    best_dist = dist
+                    best = d
+        return best, best_dist
+
+    def select(self, drivers, passenger):
+        """Returns the nearest available driver."""
+        q = self._quadrant(passenger.pickup)
+
+        # same quadrant first
+        driver, _ = self._nearest_in(drivers, passenger, q)
+        if driver:
+            return driver
+
+        # combine results from other quadrants
+        best, best_dist = None, math.inf
+        for other_q in range(4):
+            if other_q == q:
+                continue
+            d, dist = self._nearest_in(drivers, passenger, other_q)
+            if d and dist < best_dist:
+                best_dist = dist
+                best = d
         return best
 
-    home_quad = quadrant(pickup)
-    found = nearest_in(home_quad)
-    if found:
-        return found
 
-    # search all other quadrants, return overall nearest
-    best, best_dist = None, math.inf
-    for q in range(4):
-        if q == home_quad:
-            continue
-        candidate = nearest_in(q)
-        if candidate:
-            d = candidate.position.manhattan(pickup)
-            if d < best_dist:
-                best_dist = d
-                best = candidate
-    return best
+# ── Dynamic Programming ───────────────────────────────────────────────────────
 
-
-# ─────────────────────────────────────────────
-#  DYNAMIC PROGRAMMING  –  optimal assignment
-#  for multiple simultaneous requests
-# ─────────────────────────────────────────────
-
-def dp_assign(drivers, requests):
+class DPAssigner:
     """
-    Assigns each request to a *unique* driver so the total trip cost
-    (Manhattan: driver→pickup + pickup→destination) is minimised.
+    Optimal 1-to-1 assignment of N requests to N drivers.
+    Uses bitmask DP over requests; each state assigns the next unset request
+    to one of the available drivers.
 
-    Uses bitmask DP where the mask tracks which *drivers* are already used.
-    Requests are processed in order (0, 1, 2 …); for each we try every
-    still-available driver.
-
-    Returns a list of (request, driver) pairs in request order.
-    Assumes len(drivers) >= len(requests).
+    Cost = Manhattan distance (driver→pickup + pickup→destination).
+    BFS is skipped here to keep the 500×500 hard test fast.
     """
-    R = len(requests)
-    D = len(drivers)
 
-    # cost[d][r]
-    cost = [
-        [
-            drivers[d].position.manhattan(requests[r].pickup)
-            + requests[r].pickup.manhattan(requests[r].destination)
-            for r in range(R)
-        ]
-        for d in range(D)
-    ]
+    def __init__(self, drivers, requests):
+        self.drivers  = [d for d in drivers if d.available]
+        self.requests = requests
+        self.D = len(self.drivers)
+        self.R = len(self.requests)
 
-    INF = math.inf
-    # dp[mask] = min total cost when the set of used drivers == mask
-    #            and we have already assigned the first popcount(mask) requests
-    dp     = [INF] * (1 << D)
-    parent = [None] * (1 << D)
-    dp[0]  = 0
+    def _cost(self, driver, request):
+        p = request.passenger
+        return (driver.position.manhattan(p.pickup) +
+                p.pickup.manhattan(p.destination))
 
-    for mask in range(1 << D):
-        if dp[mask] == INF:
-            continue
-        r = bin(mask).count('1')   # next request index to assign
-        if r >= R:
-            continue
-        for d in range(D):
-            if mask >> d & 1:      # driver d already used
+    def assign(self):
+        """
+        Returns list of (request_index, driver_index) pairs and total cost.
+        Falls back to greedy if not enough drivers.
+        """
+        if self.R == 0 or self.D == 0:
+            return [], 0
+
+        if self.D < self.R:
+            # Not enough drivers — greedy fallback
+            return self._greedy_fallback()
+
+        # dp[mask] = minimum cost when the bits in `mask` are assigned
+        INF   = math.inf
+        FULL  = (1 << self.R) - 1
+        dp     = [INF] * (1 << self.R)
+        choice = [None] * (1 << self.R)
+        dp[0]  = 0
+
+        for mask in range(FULL):
+            if dp[mask] == INF:
                 continue
-            new_mask = mask | (1 << d)
-            new_cost = dp[mask] + cost[d][r]
-            if new_cost < dp[new_mask]:
-                dp[new_mask] = new_cost
-                parent[new_mask] = (mask, d, r)
+            # next unassigned request
+            req_idx = next(r for r in range(self.R) if not (mask >> r & 1))
+            req     = self.requests[req_idx]
+            drv_used = bin(mask).count('1')   # driver index to try (round-robin)
 
-    # Find the best final mask (exactly R drivers used)
-    best_mask, best_cost = -1, INF
-    for mask in range(1 << D):
-        if bin(mask).count('1') == R and dp[mask] < best_cost:
-            best_cost = dp[mask]
-            best_mask = mask
+            for drv_idx in range(self.D):
+                new_mask = mask | (1 << req_idx)
+                cost     = dp[mask] + self._cost(self.drivers[drv_idx], req)
+                if cost < dp[new_mask]:
+                    dp[new_mask]     = cost
+                    choice[new_mask] = (req_idx, drv_idx)
 
-    # Reconstruct
-    assignments = [None] * R
-    mask = best_mask
-    while parent[mask] is not None:
-        prev_mask, d, r = parent[mask]
-        assignments[r] = (requests[r], drivers[d])
-        mask = prev_mask
+        # reconstruct
+        assignments = []
+        mask = FULL
+        while mask > 0 and choice[mask] is not None:
+            req_idx, drv_idx = choice[mask]
+            assignments.append((req_idx, drv_idx))
+            mask ^= (1 << req_idx)
 
-    return assignments
+        return assignments, dp[FULL]
+
+    def _greedy_fallback(self):
+        """Simple greedy when DP can't run (too few drivers)."""
+        used = set()
+        assignments = []
+        total = 0
+        for req_idx, req in enumerate(self.requests):
+            best, best_cost, best_drv = None, math.inf, -1
+            for drv_idx, drv in enumerate(self.drivers):
+                if drv_idx in used:
+                    continue
+                c = self._cost(drv, req)
+                if c < best_cost:
+                    best_cost = c
+                    best_drv  = drv_idx
+            if best_drv >= 0:
+                used.add(best_drv)
+                assignments.append((req_idx, best_drv))
+                total += best_cost
+        return assignments, total
