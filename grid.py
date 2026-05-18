@@ -33,31 +33,74 @@ class Grid:
 
     # ── display ──────────────────────────────────────────────
 
+    # ANSI colors
+    _RESET  = "\033[0m"
+    _BOLD   = "\033[1m"
+    _RED    = "\033[91m"
+    _GREEN  = "\033[92m"
+    _YELLOW = "\033[93m"
+    _CYAN   = "\033[96m"
+    _GRAY   = "\033[90m"
+
+    def _cell_str(self, v):
+        """Return a colored 3-char string for one cell."""
+        if v == self.EMPTY:
+            return f"{self._GRAY} · {self._RESET}"
+        elif v == self.BLOCKED:
+            return f"{self._RED} ▓ {self._RESET}"
+        elif v == 'P':
+            return f"{self._YELLOW}{self._BOLD} P {self._RESET}"
+        elif v == 'R':
+            return f"{self._GREEN}{self._BOLD} R {self._RESET}"
+        else:                       # driver label e.g. D1, D12
+            label = v[:2] if len(v) > 2 else v
+            return f"{self._CYAN}{self._BOLD}{label:>2} {self._RESET}"
+
     def display(self, title=""):
-        if title:
-            print(f"\n{'='*40}")
-            print(f"  {title}")
-        print(f"{'='*40}")
+        W = self.cols * 3 + 6       # total inner width
+        bar = "═" * W
 
-        # column header
-        print("     ", end="")
-        for c in range(self.cols):
-            print(f"{c:3}", end="")
+        # ── title box ────────────────────────────────────────
         print()
+        if title:
+            pad_l = (W - len(title) - 2) // 2
+            pad_r = W - len(title) - 2 - pad_l
+            print(f"{self._BOLD}╔{bar}╗{self._RESET}")
+            print(f"{self._BOLD}║{' ' * pad_l} {title} {' ' * pad_r}║{self._RESET}")
+            print(f"{self._BOLD}╠{bar}╣{self._RESET}")
+        else:
+            print(f"{self._BOLD}╔{bar}╗{self._RESET}")
 
-        for r in range(self.rows):
-            print(f"{r:3}  ", end="")
+        # ── legend ───────────────────────────────────────────
+        legend = (
+            f"  "
+            f"{self._CYAN}{self._BOLD}D{self._RESET}=Driver  "
+            f"{self._YELLOW}{self._BOLD}P{self._RESET}=Pickup  "
+            f"{self._GREEN}{self._BOLD}R{self._RESET}=Dest  "
+            f"{self._RED}▓{self._RESET}=Blocked  "
+            f"{self._GRAY}·{self._RESET}=Empty"
+        )
+        print(f"{self._BOLD}║{self._RESET}{legend}")
+        print(f"{self._BOLD}╠{bar}╣{self._RESET}")
+
+        # ── column numbers (small grids only) ────────────────
+        show_coords = self.cols <= 30
+        if show_coords:
+            print(f"{self._BOLD}║{self._RESET}    ", end="")
             for c in range(self.cols):
-                v = self.cells[r][c]
-                if v == self.EMPTY:
-                    print("  .", end="")
-                elif v == self.BLOCKED:
-                    print("  X", end="")
-                elif v == 'P':
-                    print("  P", end="")
-                elif v == 'R':
-                    print("  R", end="")
-                else:           # driver label e.g. "D1"
-                    print(f" {v:>2}", end="")
-            print()
-        print("=" * 40)
+                print(f"{self._GRAY}{c:3}{self._RESET}", end="")
+            print(f"   {self._BOLD}║{self._RESET}")
+            print(f"{self._BOLD}║{self._RESET}{'─' * W}{self._BOLD}║{self._RESET}")
+
+        # ── grid rows ────────────────────────────────────────
+        for r in range(self.rows):
+            if show_coords:
+                print(f"{self._BOLD}║{self._RESET}{self._GRAY}{r:3}{self._RESET} ", end="")
+            else:
+                print(f"{self._BOLD}║{self._RESET}     ", end="")
+            for c in range(self.cols):
+                print(self._cell_str(self.cells[r][c]), end="")
+            print(f"  {self._BOLD}║{self._RESET}")
+
+        # ── bottom ───────────────────────────────────────────
+        print(f"{self._BOLD}╚{bar}╝{self._RESET}")
