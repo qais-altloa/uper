@@ -29,19 +29,18 @@ class Grid:
 
     # ── placement ────────────────────────────────────────────────────────────
 
-def generate_obstacles(self, percentage=30):
-    total = self.rows * self.cols
-    num_obs = int(total * percentage / 100)
-    placed = 0
-    
-    while placed < num_obs:
-        r = random.randint(0, self.rows - 1)
-        c = random.randint(0, self.cols - 1)
-        if self.grid[r][c] == '0':
-            self.grid[r][c] = 'X'
-            placed += 1
-
-  
+    def generate_obstacles(self, percentage=30):
+        total     = self.rows * self.cols
+        num_obs   = int(total * percentage / 100)
+        placed    = 0
+        attempts  = 0
+        while placed < num_obs and attempts < total * 10:
+            r = random.randint(0, self.rows - 1)
+            c = random.randint(0, self.cols - 1)
+            if self.grid[r][c] == '0':
+                self.grid[r][c] = 'X'
+                placed += 1
+            attempts += 1
 
     def place_driver(self, driver):
         self.grid[driver.position.row][driver.position.col] = f'D{driver.id}'
@@ -57,10 +56,19 @@ def generate_obstacles(self, percentage=30):
             self.grid[row][col] = '0'
 
     def update_driver_position(self, driver, new_pos):
+        """Update driver position on grid, clearing the old position."""
         old = driver.position
+        # Clear the old position if it still has the driver's marker
         if self.grid[old.row][old.col] == f'D{driver.id}':
             self.grid[old.row][old.col] = '0'
+        else:
+            # Safety: clear any marker that might be there
+            self.clear_cell(old.row, old.col)
+        
+        # Update driver's position in model
         driver.position = new_pos
+        
+        # Place driver marker at new position
         self.grid[new_pos.row][new_pos.col] = f'D{driver.id}'
 
     # ── display ──────────────────────────────────────────────────────────────
