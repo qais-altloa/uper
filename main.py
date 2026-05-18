@@ -146,39 +146,56 @@ def process_requests(grid, drivers, requests, animate=True):
 
     if algo == 'dp' and len(requests) > 1:
         # DP assigns all requests at once
-        assigner = DPAssigner(drivers, requests)
-        assignments, _ = assigner.assign()
-
-        drv_list = [d for d in drivers if d.available]
-
-        for req_idx, drv_idx in assignments:
-            req    = requests[req_idx]
-            driver = drv_list[drv_idx]
-            _print_request_header(req, driver, algo)
-            result = process_trip(grid, driver, req.passenger, animate)
-            if result:
-                result['request'] = req
-                driver.available  = False
-                results.append(result)
+        available_drivers = [d for d in drivers if d.available]
+        
+        if len(available_drivers) >= len(requests):
+            assigner = DPAssigner(drivers, requests)
+            assignments, total_cost = assigner.assign()
+            
+            print(f"   DP total cost: {total_cost} (Manhattan)")
+            
+            # Process each assignment
+            for req_idx, drv_idx in assignments:
+                req = requests[req_idx]
+                driver = available_drivers[drv_idx]
+                _print_request_header(req, driver, algo)
+                result = process_trip(grid, driver, req.passenger, animate)
+                if result:
+                    result['request'] = req
+                    driver.available = False
+                    results.append(result)
+        else:
+            # Fallback to greedy if not enough drivers
+            print("   Not enough drivers for DP, falling back to greedy...")
+            results = _process_greedy(grid, drivers, requests, animate, algo)
     else:
         # Greedy or D&C: process one by one
-        avail = [d for d in drivers if d.available]
-        for req in requests:
-            driver = select_driver(grid, avail, req.passenger, algo)
-            if not driver:
-                print(f"\n❌ No driver available for Request {req.id}")
-                continue
-            _print_request_header(req, driver, algo)
-            result = process_trip(grid, driver, req.passenger, animate)
-            if result:
-                result['request'] = req
-                driver.available  = False
-                avail.remove(driver)
-                results.append(result)
+        results = _process_greedy(grid, drivers, requests, animate, algo)
 
-            if animate:
-                input("\n⏎ Press Enter for next request...")
+    return results
 
+
+def _process_greedy(grid, drivers, requests, animate, algo):
+    """Process requests one by one using greedy/D&C selection."""
+    results = []
+    avail = [d for d in drivers if d.available]
+    
+    for req in requests:
+        driver = select_driver(grid, avail, req.passenger, algo)
+        if not driver:
+            print(f"\n❌ No driver available for Request {req.id}")
+            continue
+        _print_request_header(req, driver, algo)
+        result = process_trip(grid, driver, req.passenger, animate)
+        if result:
+            result['request'] = req
+            driver.available = False
+            avail.remove(driver)
+            results.append(result)
+
+        if animate:
+            input("\n⏎ Press Enter for next request...")
+    
     return results
 
 
@@ -235,7 +252,7 @@ def run_hard_test():
 
     grid = Grid(500, 500)
     # No obstacles for the spec test so paths are always reachable
-    # (obstacles would require many BFS calls on a huge grid)
+    grid.generate_obstacles(0)
 
     driver_coords = [
         (10,20),(50,60),(100,120),(130,300),(200,200),
@@ -308,7 +325,8 @@ class UberGame:
         input("\n⏎ Press Enter to continue...")
 
     def _setup_grid(self):
-        clear(); header()
+        clear()
+        header()
         print("\n🏙️  CITY GRID SETUP")
         print("-" * 40)
 
@@ -350,7 +368,8 @@ class UberGame:
         input("\n⏎ Press Enter to continue...")
 
     def _collect_requests(self):
-        clear(); header()
+        clear()
+        header()
         print("\n📱 RIDE REQUESTS")
         print("-" * 40)
         max_req = min(5, len(self.drivers))
