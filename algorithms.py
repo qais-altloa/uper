@@ -125,20 +125,18 @@ class DivideAndConquer:
 class DPAssigner:
     """
     Optimal 1-to-1 assignment of N requests to N drivers.
-    Uses bitmask DP over requests; each state assigns the next unset request
-    to one of the available drivers.
-
+    Uses bitmask DP: iterates over request masks, assigns available drivers in order.
     Cost = Manhattan distance (driver→pickup + pickup→destination).
-    BFS is skipped here to keep the 500×500 hard test fast.
     """
 
     def __init__(self, drivers, requests):
-        self.drivers  = [d for d in drivers if d.available]
+        self.drivers = [d for d in drivers if d.available]
         self.requests = requests
         self.D = len(self.drivers)
         self.R = len(self.requests)
 
     def _cost(self, driver, request):
+        """Calculate Manhattan distance cost for a driver-request pair."""
         p = request.passenger
         return (driver.position.manhattan(p.pickup) +
                 p.pickup.manhattan(p.destination))
@@ -152,59 +150,81 @@ class DPAssigner:
             return [], 0
 
         if self.D < self.R:
-            # Not enough drivers — greedy fallback
+            # Not enough available drivers - use greedy fallback
             return self._greedy_fallback()
 
-        # dp[mask] = minimum cost when the bits in `mask` are assigned
-        INF   = math.inf
-        FULL  = (1 << self.R) - 1
-        dp     = [INF] * (1 << self.R)
-        choice = [None] * (1 << self.R)
-        dp[0]  = 0
+        INF = math.inf
+        FULL = (1 << self.R) - 1
+        
+        # dp[mask] = minimum cost to assign requests represented by mask
+        # using drivers[0 .. count_bits(mask)-1]
+        dp = [INF] * (1 << self.R)
+        choice = [None] * (1 << self.R)  # stores (request_idx, driver_idx) for the last assignment
+        dp[0] = 0
 
-        for mask in range(FULL):
+        # Iterate over all request masks
+        for mask in range(FULL + 1):
             if dp[mask] == INF:
                 continue
-            # next unassigned request
-            req_idx = next(r for r in range(self.R) if not (mask >> r & 1))
-            req     = self.requests[req_idx]
-            drv_used = bin(mask).count('1')   # driver index to try (round-robin)
-
-            for drv_idx in range(self.D):
+            
+            assigned_count = bin(mask).count('1')
+            if assigned_count >= self.D:
+                continue
+            
+            # The next driver to assign (in order)
+            driver = self.drivers[assigned_count]
+            
+            # Try assigning this driver to each unassigned request
+            for req_idx in range(self.R):
+                if mask & (1 << req_idx):
+                    continue  # Request already assigned
+                
                 new_mask = mask | (1 << req_idx)
-                cost     = dp[mask] + self._cost(self.drivers[drv_idx], req)
-                if cost < dp[new_mask]:
-                    dp[new_mask]     = cost
-                    choice[new_mask] = (req_idx, drv_idx)
+                new_cost = dp[mask] + self._cost(driver, self.requests[req_idx])
+                
+                if new_cost < dp[new_mask]:
+                    dp[new_mask] = new_cost
+                    choice[new_mask] = (req_idx, assigned_count)
 
-        # reconstruct
+        # Reconstruct assignments
         assignments = []
-        mask = FULL
-        while mask > 0 and choice[mask] is not None:
-            req_idx, drv_idx = choice[mask]
-            assignments.append((req_idx, drv_idx))
-            mask ^= (1 << req_idx)
-
-        return assignments, dp[FULL]
+        if dp[FULL] != INF:
+            mask = FULL
+            while mask > 0:
+                req_idx, drv_idx = choice[mask]
+                assignments.append((req_idx, drv_idx))
+                mask ^= (1 << req_idx)
+            assignments.reverse()  # Restore original order
+            return assignments, dp[FULL]
+        
+        # Fallback if DP fails
+        return self._greedy_fallback()
 
     def _greedy_fallback(self):
-        """Simple greedy when DP can't run (too few drivers)."""
-        used = set()
+        """Simple greedy assignment when DP can't run (e.g., too few drivers)."""
+        used_drivers = set()
         assignments = []
-        total = 0
+        total_cost = 0
+        
+        # Sort requests arbitrarily (by index)
         for req_idx, req in enumerate(self.requests):
-            best, best_cost, best_drv = None, math.inf, -1
+            best_drv_idx = -1
+            best_cost = math.inf
+            
+            # Find best available driver for this request
             for drv_idx, drv in enumerate(self.drivers):
-                if drv_idx in used:
+                if drv_idx in used_drivers:
                     continue
-                c = self._cost(drv, req)
-                if c < best_cost:
-                    best_cost = c
-                    best_drv  = drv_idx
-            if best_drv >= 0:
-                used.add(best_drv)
-                assignments.append((req_idx, best_drv))
-                total += best_cost
-        return assignments, total
+                cost = self._cost(drv, req)
+                if cost < best_cost:
+                    best_cost = cost
+                    best_drv_idx = drv_idx
+            
+            if best_drv_idx >= 0:
+                used_drivers.add(best_drv_idx)
+                assignments.append((req_idx, best_drv_idx))
+                total_cost += best_cost
+        
+        return assignments, total_cost
 
            
