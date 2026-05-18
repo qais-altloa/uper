@@ -29,18 +29,19 @@ class Grid:
 
     # ── placement ────────────────────────────────────────────────────────────
 
-    def generate_obstacles(self, percentage=30):
-        total     = self.rows * self.cols
-        num_obs   = int(total * percentage / 100)
-        placed    = 0
-        attempts  = 0
-        while placed < num_obs and attempts < total * 10:
-            r = random.randint(0, self.rows - 1)
-            c = random.randint(0, self.cols - 1)
-            if self.grid[r][c] == '0':
-                self.grid[r][c] = 'X'
-                placed += 1
-            attempts += 1
+def generate_obstacles(self, percentage=30):
+    total = self.rows * self.cols
+    num_obs = int(total * percentage / 100)
+    placed = 0
+    
+    while placed < num_obs:
+        r = random.randint(0, self.rows - 1)
+        c = random.randint(0, self.cols - 1)
+        if self.grid[r][c] == '0':
+            self.grid[r][c] = 'X'
+            placed += 1
+
+  
 
     def place_driver(self, driver):
         self.grid[driver.position.row][driver.position.col] = f'D{driver.id}'
