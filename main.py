@@ -5,21 +5,21 @@ import time
 import random
 import math
 
-from models    import Driver, Passenger, RideRequest, Cell
-from grid      import Grid
+from models import Driver, Passenger, RideRequest, Cell
+from Grid import Grid
 from algorithms import BFS, GreedySelector, DivideAndConquer, DPAssigner
-
+from statistics import show as show_stats
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
-COST_PER_STEP = 5   # EGP per grid step
-TIME_PER_STEP = 2   # minutes per grid step
+COST_PER_STEP = 5  # EGP per grid step
+TIME_PER_STEP = 2  # minutes per grid step
 
-NAMES  = ["Ahmed", "Sara", "Mohamed", "Fatima", "Omar",
-          "Laila", "Youssef", "Mariam", "Khaled", "Nour"]
-CARS   = ["Toyota Camry", "Honda Civic", "Hyundai Elantra",
-          "Kia Cerato", "Nissan Sunny", "Tesla Model 3",
-          "BMW 320i", "Mercedes C200", "Audi A4", "Ford Focus"]
+NAMES = ["Ahmed", "Sara", "Mohamed", "Fatima", "Omar",
+         "Laila", "Youssef", "Mariam", "Khaled", "Nour"]
+CARS = ["Toyota Camry", "Honda Civic", "Hyundai Elantra",
+        "Kia Cerato", "Nissan Sunny", "Tesla Model 3",
+        "BMW 320i", "Mercedes C200", "Audi A4", "Ford Focus"]
 PHONES = ["0100", "0111", "0122", "0133", "0144",
           "0155", "0166", "0177", "0188", "0199"]
 
@@ -29,22 +29,25 @@ PHONES = ["0100", "0111", "0122", "0133", "0144",
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
 
+
 def header():
     print("=" * 60)
     print("   🚕  SMART UBER RIDE MATCHING SYSTEM  🚕")
     print("=" * 60)
 
+
 def sep(n=60):
     print("=" * n)
 
+
 def make_driver(id, row, col):
     return Driver(
-        id    = id,
-        name  = NAMES[id % len(NAMES)],
-        phone = PHONES[id % len(PHONES)] + str(random.randint(1000, 9999)),
-        car   = CARS[id % len(CARS)],
-        row   = row,
-        col   = col,
+        id=id,
+        name=NAMES[id % len(NAMES)],
+        phone=PHONES[id % len(PHONES)] + str(random.randint(1000, 9999)),
+        car=CARS[id % len(CARS)],
+        row=row,
+        col=col,
     )
 
 
@@ -56,8 +59,8 @@ def pick_algorithm(grid, drivers, num_requests):
     Returns one of: 'dp', 'dc', 'greedy'
     """
     rows, cols = grid.get_size()
-    grid_size  = rows * cols
-    avail      = sum(1 for d in drivers if d.available)
+    grid_size = rows * cols
+    avail = sum(1 for d in drivers if d.available)
 
     if num_requests > 1 and avail >= num_requests:
         return 'dp'
@@ -114,12 +117,12 @@ def process_trip(grid, driver, passenger, animate=True):
 
     total = d1 + d2
     return {
-        'driver'        : driver,
+        'driver': driver,
         'dist_to_pickup': d1,
-        'dist_to_dest'  : d2,
+        'dist_to_dest': d2,
         'total_distance': total,
-        'cost'          : total * COST_PER_STEP,
-        'time'          : total * TIME_PER_STEP,
+        'cost': total * COST_PER_STEP,
+        'time': total * TIME_PER_STEP,
     }
 
 
@@ -147,13 +150,13 @@ def process_requests(grid, drivers, requests, animate=True):
     if algo == 'dp' and len(requests) > 1:
         # DP assigns all requests at once
         available_drivers = [d for d in drivers if d.available]
-        
+
         if len(available_drivers) >= len(requests):
             assigner = DPAssigner(drivers, requests)
             assignments, total_cost = assigner.assign()
-            
+
             print(f"   DP total cost: {total_cost} (Manhattan)")
-            
+
             # Process each assignment
             for req_idx, drv_idx in assignments:
                 req = requests[req_idx]
@@ -179,7 +182,7 @@ def _process_greedy(grid, drivers, requests, animate, algo):
     """Process requests one by one using greedy/D&C selection."""
     results = []
     avail = [d for d in drivers if d.available]
-    
+
     for req in requests:
         driver = select_driver(grid, avail, req.passenger, algo)
         if not driver:
@@ -195,7 +198,7 @@ def _process_greedy(grid, drivers, requests, animate, algo):
 
         if animate:
             input("\n⏎ Press Enter for next request...")
-    
+
     return results
 
 
@@ -255,10 +258,10 @@ def run_hard_test():
     grid.generate_obstacles(0)
 
     driver_coords = [
-        (10,20),(50,60),(100,120),(130,300),(200,200),
-        (250,250),(300,100),(320,330),(400,450),(450,100),
-        (70,420),(90,90),(160,170),(210,50),(260,400),
-        (350,250),(410,210),(470,470),(20,480),(499,10),
+        (10, 20), (50, 60), (100, 120), (130, 300), (200, 200),
+        (250, 250), (300, 100), (320, 330), (400, 450), (450, 100),
+        (70, 420), (90, 90), (160, 170), (210, 50), (260, 400),
+        (350, 250), (410, 210), (470, 470), (20, 480), (499, 10),
     ]
     drivers = []
     for i, (r, c) in enumerate(driver_coords, 1):
@@ -267,11 +270,11 @@ def run_hard_test():
         grid.place_driver(d)
 
     request_data = [
-        (40,50,  100,100),
-        (220,210,300,300),
-        (480,460,450,430),
-        (80,400, 20,350),
-        (340,260,410,300),
+        (40, 50, 100, 100),
+        (220, 210, 300, 300),
+        (480, 460, 450, 430),
+        (80, 400, 20, 350),
+        (340, 260, 410, 300),
     ]
     requests = []
     for i, (pr, pc, dr, dc) in enumerate(request_data, 1):
@@ -294,11 +297,11 @@ def run_hard_test():
     sep(70)
     print("📄  Expected output (from project spec — Manhattan distances):")
     spec = [
-        ("R1","D2", 20, 110, 130),
-        ("R2","D5", 30, 170, 200),
-        ("R3","D18",20,  60,  80),
-        ("R4","D11",30, 110, 140),
-        ("R5","D16",20, 110, 130),
+        ("R1", "D2", 20, 110, 130),
+        ("R2", "D5", 30, 170, 200),
+        ("R3", "D18", 20, 60, 80),
+        ("R4", "D11", 30, 110, 140),
+        ("R5", "D16", 20, 110, 130),
     ]
     for req, drv, d2p, d2d, tot in spec:
         print(f"  {req} → {drv}  |  to pickup: {d2p}  |  to dest: {d2d}  |  total: {tot}")
@@ -312,8 +315,8 @@ class UberGame:
 
     def __init__(self):
         self.player_name = ""
-        self.grid        = None
-        self.drivers     = []
+        self.grid = None
+        self.drivers = []
 
     # ── setup ─────────────────────────────────────────────────────────────────
 
@@ -340,7 +343,7 @@ class UberGame:
             except ValueError:
                 print("❌ Enter integers.")
 
-        self.grid    = Grid(rows, cols)
+        self.grid = Grid(rows, cols)
         self.drivers = []
 
         self.grid.generate_obstacles(30)
@@ -385,7 +388,7 @@ class UberGame:
 
         requests = []
         for i in range(n):
-            print(f"\n── Request {i+1} ──")
+            print(f"\n── Request {i + 1} ──")
             while True:
                 try:
                     pr = int(input("  Pickup row   : "))
@@ -438,6 +441,7 @@ class UberGame:
 
             if results:
                 print_report(results, self.player_name)
+                show_stats(results,self.player_name)
             else:
                 print("\n❌ No trips were completed.")
 
@@ -446,7 +450,7 @@ class UberGame:
                 break
 
             # reset for new round
-            self.grid    = None
+            self.grid = None
             self.drivers = []
 
         print(f"\n👋 Thank you, {self.player_name}! Goodbye! 👋\n")
