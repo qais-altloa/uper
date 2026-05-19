@@ -121,7 +121,7 @@ class DivideAndConquer:
 
 
 # ── Dynamic Programming ───────────────────────────────────────────────────────
-# ask qais amd abu hemid specially abu hemid
+
 class DPAssigner:
     """
     Optimal 1-to-1 assignment of N requests to N drivers.
